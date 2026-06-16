@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GPsikmin 皮皮盒 — 插上就飛人</title>
+  <meta name="description" content="不用技術、不用設定，插上就能幫你在 Pikmin Bloom 自動飛人孵蛋。">
+  <meta name="robots" content="index, follow">
+  <meta property="og:title" content="GPsikmin 皮皮盒 — 插上就飛人">
+  <meta property="og:description" content="不用技術、不用設定，插上就能幫你在 Pikmin Bloom 自動飛人孵蛋。">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://gpsikmin2026.github.io/">
+  <link rel="canonical" href="https://gpsikmin2026.github.io/">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --green: #3a9e5f;
+      --green-dark: #2c7a49;
+      --green-light: #e8f7ee;
+      --yellow: #f5c842;
+      --text: #1a1a1a;
+      --muted: #666;
+      --border: #e0e0e0;
+      --radius: 14px;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", sans-serif;
+      color: var(--text);
+      line-height: 1.6;
+      background: #fff;
+    }
+
+    /* ── NAV ── */
+    nav {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(255,255,255,0.95);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 24px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .nav-logo { font-size: 1.25rem; font-weight: 700; color: var(--green); letter-spacing: -0.5px; }
+    .nav-logo span { color: var(--text); }
+    .nav-cta {
+      background: var(--green); color: #fff;
+      padding: 8px 20px; border-radius: 99px;
+      font-size: 0.9rem; font-weight: 600;
+      text-decoration: none; white-space: nowrap;
+      transition: background 0.2s;
+    }
+    .nav-cta:hover { background: var(--green-dark); }
+
+    /* ── HERO ── */
+    .hero {
+      background: linear-gradient(160deg, #f0faf4 0%, #fff 60%);
+      padding: 72px 24px 60px;
+      text-align: center;
+    }
+    .hero-badge {
+      display: inline-block;
+      background: var(--green-light); color: var(--green-dark);
+      font-size: 0.8rem; font-weight: 600;
+      padding: 4px 14px; border-radius: 99px;
+      margin-bottom: 20px; letter-spacing: 0.5px;
+    }
+    .hero h1 {
+      font-size: clamp(2.2rem, 7vw, 3.6rem);
+      font-weight: 800; line-height: 1.15;
+      letter-spacing: -1px; margin-bottom: 16px;
+    }
+    .hero h1 em { color: var(--green); font-style: normal; }
+    .hero p {
+      font-size: clamp(1rem, 3vw, 1.2rem);
+      color: var(--muted); max-width: 480px;
+      margin: 0 auto 36px;
+    }
+    .hero-btns { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+    .btn-primary {
+      background: var(--green); color: #fff;
+      padding: 14px 32px; border-radius: 99px;
+      font-size: 1.05rem; font-weight: 700;
+      text-decoration: none; transition: background 0.2s, transform 0.15s;
+      display: inline-block;
+    }
+    .btn-primary:hover { background: var(--green-dark); transform: translateY(-1px); }
+    .btn-secondary {
+      background: #fff; color: var(--green);
+      border: 2px solid var(--green);
+      padding: 12px 28px; border-radius: 99px;
+      font-size: 1.05rem; font-weight: 700;
+      text-decoration: none; transition: 0.2s;
+      display: inline-block;
+    }
+    .btn-secondary:hover { background: var(--green-light); }
+    .hero-note { margin-top: 20px; font-size: 0.85rem; color: #aaa; }
+
+    /* ── SECTION COMMON ── */
+    section { padding: 72px 24px; }
+    .container { max-width: 900px; margin: 0 auto; }
+    .section-title {
+      text-align: center; font-size: clamp(1.5rem, 4vw, 2rem);
+      font-weight: 800; margin-bottom: 10px; letter-spacing: -0.5px;
+    }
+    .section-sub {
+      text-align: center; color: var(--muted);
+      font-size: 1rem; margin-bottom: 48px;
+    }
+
+    /* ── STEPS ── */
+    .steps { background: #fafafa; }
+    .steps-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 24px;
+    }
+    .step {
+      background: #fff; border-radius: var(--radius);
+      padding: 28px 24px; text-align: center;
+      border: 1px solid var(--border);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    }
+    .step-num {
+      width: 48px; height: 48px; border-radius: 50%;
+      background: var(--green); color: #fff;
+      font-size: 1.3rem; font-weight: 800;
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 16px;
+    }
+    .step h3 { font-size: 1.05rem; font-weight: 700; margin-bottom: 8px; }
+    .step p { font-size: 0.9rem; color: var(--muted); }
+
+    /* ── VIDEO ── */
+    .video-wrap {
+      max-width: 720px; margin: 0 auto;
+      border-radius: var(--radius); overflow: hidden;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+      background: #000; aspect-ratio: 16/9;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .video-wrap iframe { width: 100%; height: 100%; border: 0; display: block; }
+    .video-placeholder {
+      width: 100%; aspect-ratio: 16/9;
+      background: linear-gradient(135deg, #1a1a2e, #16213e);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      color: #fff; gap: 12px; border-radius: var(--radius);
+    }
+    .video-placeholder .play-btn {
+      width: 72px; height: 72px; border-radius: 50%;
+      background: rgba(255,255,255,0.15);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 2rem;
+    }
+    .video-placeholder p { font-size: 1rem; opacity: 0.7; }
+
+    /* ── FEATURES ── */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 20px;
+    }
+    .feature {
+      padding: 24px; border-radius: var(--radius);
+      border: 1px solid var(--border);
+      display: flex; gap: 16px; align-items: flex-start;
+    }
+    .feature-icon {
+      font-size: 1.8rem; flex-shrink: 0;
+      width: 48px; height: 48px;
+      background: var(--green-light); border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .feature h3 { font-size: 0.95rem; font-weight: 700; margin-bottom: 4px; }
+    .feature p { font-size: 0.85rem; color: var(--muted); }
+
+    /* ── PRICING ── */
+    .pricing { background: var(--green-light); }
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 20px; align-items: start;
+    }
+    .price-card {
+      background: #fff; border-radius: var(--radius);
+      padding: 28px 24px; border: 2px solid var(--border);
+      text-align: center; position: relative;
+    }
+    .price-card.featured {
+      border-color: var(--green);
+      box-shadow: 0 8px 32px rgba(58,158,95,0.15);
+      transform: scale(1.03);
+    }
+    .price-badge {
+      position: absolute; top: -14px; left: 50%; transform: translateX(-50%);
+      background: var(--green); color: #fff;
+      font-size: 0.78rem; font-weight: 700;
+      padding: 4px 16px; border-radius: 99px; white-space: nowrap;
+    }
+    .price-card h3 { font-size: 1.1rem; font-weight: 700; margin-bottom: 4px; }
+    .price-card .price {
+      font-size: 1.6rem; font-weight: 800;
+      color: var(--green); margin: 12px 0;
+    }
+    .price-card .price span { font-size: 1rem; font-weight: 400; color: var(--muted); }
+    .price-card ul {
+      list-style: none; text-align: left;
+      font-size: 0.88rem; color: var(--muted);
+      margin: 16px 0 24px; display: flex; flex-direction: column; gap: 8px;
+    }
+    .price-card ul li::before { content: "✓ "; color: var(--green); font-weight: 700; }
+    .price-card .btn-primary { width: 100%; text-align: center; font-size: 0.95rem; }
+    .price-card .btn-secondary { width: 100%; text-align: center; font-size: 0.95rem; }
+    .price-strike {
+      font-size: 0.85rem; color: #bbb;
+      text-decoration: line-through; margin-top: -8px; margin-bottom: 4px;
+    }
+
+    /* ── FAQ ── */
+    .faq-list { max-width: 680px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
+    details {
+      border: 1px solid var(--border); border-radius: var(--radius);
+      overflow: hidden;
+    }
+    summary {
+      padding: 18px 20px; font-weight: 600; font-size: 0.95rem;
+      cursor: pointer; list-style: none;
+      display: flex; justify-content: space-between; align-items: center;
+      user-select: none;
+    }
+    summary::-webkit-details-marker { display: none; }
+    summary::after { content: "+"; font-size: 1.3rem; color: var(--green); flex-shrink: 0; }
+    details[open] summary::after { content: "−"; }
+    details[open] summary { border-bottom: 1px solid var(--border); }
+    .faq-body { padding: 16px 20px; font-size: 0.9rem; color: var(--muted); line-height: 1.7; }
+
+    /* ── CTA BANNER ── */
+    .cta-banner {
+      background: var(--green);
+      padding: 64px 24px; text-align: center; color: #fff;
+    }
+    .cta-banner h2 { font-size: clamp(1.5rem, 4vw, 2.2rem); font-weight: 800; margin-bottom: 12px; }
+    .cta-banner p { font-size: 1rem; opacity: 0.85; margin-bottom: 32px; }
+    .btn-white {
+      background: #fff; color: var(--green);
+      padding: 14px 36px; border-radius: 99px;
+      font-size: 1.05rem; font-weight: 700;
+      text-decoration: none; display: inline-block;
+      transition: 0.2s;
+    }
+    .btn-white:hover { background: var(--green-light); }
+
+    /* ── FOOTER ── */
+    footer {
+      background: #111; color: #aaa;
+      padding: 32px 24px; text-align: center;
+      font-size: 0.85rem;
+    }
+    footer a { color: #ccc; text-decoration: none; }
+    footer a:hover { color: #fff; }
+
+    /* ── MOBILE ── */
+    @media (max-width: 600px) {
+      .price-card.featured { transform: none; }
+      section { padding: 52px 20px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-logo">GPsikmin <span>皮皮盒</span></div>
+  <a href="#pricing" class="nav-cta">立即購買</a>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-badge">🌱 Pikmin Bloom GPS 模擬器</div>
+  <h1>插上就<em>飛人</em><br>自動孵蛋不費力</h1>
+  <p>不需要任何技術知識。接上電源、連上 Wi-Fi、插上 iPhone，30 秒後開始自動走路。</p>
+  <div class="hero-btns">
+    <a href="#pricing" class="btn-primary">查看方案 →</a>
+    <a href="#how" class="btn-secondary">怎麼運作？</a>
+  </div>
+  <p class="hero-note">支援 iOS 17 以上 ・ 免 Root 免越獄 ・ 台灣製作</p>
+</section>
+
+<!-- HOW IT WORKS -->
+<section class="steps" id="how">
+  <div class="container">
+    <h2 class="section-title">三步驟，開始飛人</h2>
+    <p class="section-sub">不需要安裝任何 App，不需要電腦，不需要技術知識。</p>
+    <div class="steps-grid">
+      <div class="step">
+        <div class="step-num">1</div>
+        <h3>接上電源</h3>
+        <p>皮皮盒插電開機，自動建立 Wi-Fi 熱點 GPsikmin。</p>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <h3>連上 Wi-Fi</h3>
+        <p>手機連到 GPsikmin 熱點，瀏覽器開啟控制頁面。</p>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <h3>插上 iPhone</h3>
+        <p>USB 連接 iPhone，點「開始」，角色就在地圖上走了。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- VIDEO -->
+<section>
+  <div class="container">
+    <h2 class="section-title">看看實際效果</h2>
+    <p class="section-sub">從開機到開始飛人，全程示範。</p>
+    <div class="video-wrap">
+      <!-- 換成你的 YouTube embed URL -->
+      <div class="video-placeholder">
+        <div class="play-btn">▶</div>
+        <p>示範影片即將上線</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section>
+  <div class="container">
+    <h2 class="section-title">功能一覽</h2>
+    <p class="section-sub">專為 Pikmin Bloom 玩家設計的完整工具箱</p>
+    <div class="features-grid">
+      <div class="feature">
+        <div class="feature-icon">🗺️</div>
+        <div>
+          <h3>地圖規劃路線</h3>
+          <p>點地圖設中繼點，自動走真實街道，速度 3–25 km/h 自由調整。</p>
+        </div>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">🍄</div>
+        <div>
+          <h3>尋菇定點停留</h3>
+          <p>設好蘑菇位置，自動在每個點停留指定時間，不需要一直盯著螢幕。</p>
+        </div>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">🌸</div>
+        <div>
+          <h3>繞圈種花模式</h3>
+          <p>在指定位置自動繞圈，輕鬆完成種花任務。</p>
+        </div>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">⏰</div>
+        <div>
+          <h3>定時排程</h3>
+          <p>設定幾點自動開始，睡前設好，起床已走完一圈。</p>
+        </div>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">🕹️</div>
+        <div>
+          <h3>搖桿即時控制</h3>
+          <p>加購 WiFi 搖桿，隨時手動調整方向，像打電動一樣直覺。</p>
+        </div>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">🔒</div>
+        <div>
+          <h3>免 Root 免越獄</h3>
+          <p>透過 Apple 官方開發者協議運作，iOS 17 以上直接使用。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PRICING -->
+<section class="pricing" id="pricing">
+  <div class="container">
+    <h2 class="section-title">選擇方案</h2>
+    <p class="section-sub">一次買斷，沒有月費。</p>
+    <div class="pricing-grid">
+
+      <div class="price-card">
+        <h3>皮皮盒 主機</h3>
+        <p style="font-size:0.85rem;color:var(--muted);margin-top:4px;">適合已有 Wi-Fi 搖桿或不需要搖桿的玩家</p>
+        <div class="price">NT$2,480 <span>/ 台</span></div>
+        <ul>
+          <li>皮皮盒主機 × 1</li>
+          <li>16GB 預燒 SD 卡</li>
+          <li>5V/3A 充電頭（BSMI）</li>
+          <li>OTG 轉接頭</li>
+          <li>全功能 Web 控制介面</li>
+        </ul>
+        <a href="#contact" class="btn-secondary">我要購買</a>
+      </div>
+
+      <div class="price-card featured">
+        <div class="price-badge">最多人選擇</div>
+        <h3>皮皮盒 套裝</h3>
+        <p style="font-size:0.85rem;color:var(--muted);margin-top:4px;">主機 + WiFi 搖桿，體驗最完整</p>
+        <p class="price-strike">NT$3,680</p>
+        <div class="price">NT$2,800 <span>/ 組</span></div>
+        <ul>
+          <li>皮皮盒主機 × 1（含充電頭）</li>
+          <li>WiFi 搖桿 × 1</li>
+          <li>16GB 預燒 SD 卡</li>
+          <li>OTG 轉接頭</li>
+          <li>全功能 Web 控制介面</li>
+          <li style="color:var(--green);font-weight:600;">省 NT$880</li>
+        </ul>
+        <a href="#contact" class="btn-primary">我要購買</a>
+      </div>
+
+      <div class="price-card">
+        <div style="display:inline-block;background:#f0f0f0;color:#888;font-size:0.75rem;font-weight:700;padding:3px 12px;border-radius:99px;margin-bottom:10px;">選購配件</div>
+        <h3>WiFi 搖桿</h3>
+        <p style="font-size:0.85rem;color:var(--muted);margin-top:4px;">已有主機的玩家加購</p>
+        <div class="price">NT$1,200 <span>/ 個</span></div>
+        <ul>
+          <li>五向 WiFi 搖桿 × 1</li>
+          <li>連接皮皮盒 Wi-Fi 即用</li>
+          <li>即時控制 GPS 方向</li>
+          <li>長按停止模擬</li>
+        </ul>
+        <a href="#contact" class="btn-secondary">加購搖桿</a>
+      </div>
+
+    </div>
+    <p style="text-align:center;margin-top:24px;font-size:0.85rem;color:var(--muted);">
+      一次買斷，永久使用，不收月費。僅支援 iPhone（iOS 17+），不支援 Android。
+    </p>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section>
+  <div class="container">
+    <h2 class="section-title">常見問題</h2>
+    <p class="section-sub"></p>
+    <div class="faq-list">
+      <details>
+        <summary>支援哪些 iPhone？</summary>
+        <div class="faq-body">支援 iOS 17 以上的 iPhone。建議先確認你的 iOS 版本，設定 → 一般 → 關於本機 → 軟體版本。</div>
+      </details>
+      <details>
+        <summary>需要 Root 或越獄嗎？</summary>
+        <div class="faq-body">完全不需要。透過 Apple 官方開發者工具協議連線，不需要修改手機，也不會影響手機保固。</div>
+      </details>
+      <details>
+        <summary>Android 手機可以用嗎？</summary>
+        <div class="faq-body">目前只支援 iPhone（iOS 17+），不支援 Android。</div>
+      </details>
+      <details>
+        <summary>會被 Pikmin Bloom 封號嗎？</summary>
+        <div class="faq-body">GPsikmin 採用系統層級的定位注入，與一般 mock location 不同，被偵測的風險較低。但任何 GPS 模擬都有一定風險，建議速度設定在合理範圍（步行 5–8 km/h），不要設定不合理的瞬間位移。</div>
+      </details>
+      <details>
+        <summary>需要手機一直插著嗎？</summary>
+        <div class="faq-body">是的，iPhone 需要透過 USB 連接皮皮盒才能運作。連接期間 iPhone 可以正常充電（需使用支援資料傳輸的 Lightning/USB-C 線，非純充電線）。</div>
+      </details>
+      <details>
+        <summary>如何購買？運費多少？</summary>
+        <div class="faq-body">目前採預購制，請透過下方聯絡方式洽詢。台灣本島超商取貨，運費 NT$60–80，偏遠地區另計。</div>
+      </details>
+      <details>
+        <summary>有保固嗎？</summary>
+        <div class="faq-body">主機保固 30 天，非人為損壞免費維修或換新。軟體問題（iOS 更新不相容等）提供免費更新。</div>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- CTA BANNER -->
+<section class="cta-banner" id="contact">
+  <h2>準備好開始飛人了嗎？</h2>
+  <p>加 LINE 洽詢購買，通常 24 小時內回覆。</p>
+  <!-- 換成你的 LINE ID 連結 -->
+  <a href="https://line.me/ti/p/你的LINE_ID" class="btn-white">LINE 洽詢購買</a>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <p>GPsikmin 皮皮盒 &nbsp;·&nbsp; 台灣製作 &nbsp;·&nbsp;
+    <a href="mailto:fadracer.ai@gmail.com">fadracer.ai@gmail.com</a>
+  </p>
+  <p style="margin-top:8px;font-size:0.78rem;opacity:0.5;">
+    GPsikmin 與 Pikmin Bloom、任天堂、Niantic 無任何關聯。使用者自行承擔帳號風險。
+  </p>
+</footer>
+
+</body>
+</html>
