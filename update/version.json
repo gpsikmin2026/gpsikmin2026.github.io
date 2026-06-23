@@ -1,0 +1,6 @@
+{
+  "version": "1.4.0",
+  "url": "https://gpsikmin2026.github.io/update/pikmin_web.py",
+  "sha256": "c7e5131ea4c0be22f796f9dd2c5461291f55ce7e3a0273d1a79d3751fdca2c78",
+  "changelog": "v1.4.0：移除排程、步數安全限制（每次5000/每日50000）、掛機全模式重連、折返圈數顯示、OTA軟體更新、說明手冊全面修正"
+}
