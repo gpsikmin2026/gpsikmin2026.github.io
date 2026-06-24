@@ -822,11 +822,11 @@ def api_update_apply():
         if _is_overlayroot():
             real_path = _SELF_PATH.replace("/home/", "/media/root-ro/home/", 1)
             overlay_path = _SELF_PATH.replace("/home/", "/media/root-rw/overlay/home/", 1)
-            subprocess.run(["sudo", "mount", "-o", "remount,rw", "/media/root-ro"], check=True, timeout=10)
+            subprocess.run(["sudo", "bash", "-c", "mount -o remount,rw /media/root-ro"], check=True, timeout=10)
             os.makedirs(os.path.dirname(real_path), exist_ok=True)
             with open(real_path, "wb") as f:
                 f.write(new_code)
-            subprocess.run(["sudo", "mount", "-o", "remount,ro", "/media/root-ro"], check=True, timeout=10)
+            subprocess.run(["sudo", "bash", "-c", "mount -o remount,ro /media/root-ro"], check=True, timeout=10)
             os.makedirs(os.path.dirname(overlay_path), exist_ok=True)
             with open(overlay_path, "wb") as f:
                 f.write(new_code)

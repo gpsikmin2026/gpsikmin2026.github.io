@@ -1,6 +1,6 @@
 {
   "version": "1.5.0",
   "url": "https://gpsikmin2026.github.io/update/pikmin_web.py",
-  "sha256": "9a0cde42686352724ce3f8f675b7311747910ab7ffa7baa1f8bd8ce7b7a62e3b",
-  "changelog": "v1.5.0：修復停止按鈕卡住問題（loc.set/clear 加 5s timeout + 強制停止機制）"
+  "sha256": "ecb22380c2e8e6e7148eb53c6c81df43c41b342f5b63293261cc8d43c912a4db",
+  "changelog": "v1.5.0：修復停止按鈕卡住 + OTA overlayroot 寫入權限修正"
 }
