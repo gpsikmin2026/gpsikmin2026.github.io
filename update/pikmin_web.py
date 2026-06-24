@@ -3,7 +3,7 @@
 GPsikmin Web UI
 執行：python3 pikmin_web.py
 """
-VERSION = "1.4.0"
+VERSION = "1.5.0"
 
 import asyncio
 import hashlib
@@ -165,6 +165,31 @@ def _drain_event_queue():
             break
 
 
+LOC_SET_TIMEOUT = 5.0
+
+async def _safe_loc_set(loc, lat, lng):
+    try:
+        await asyncio.wait_for(loc.set(lat, lng), timeout=LOC_SET_TIMEOUT)
+        return True
+    except (asyncio.TimeoutError, Exception):
+        return False
+
+async def _safe_cleanup(loc, dvt, rsd, skip_clear=False):
+    if not skip_clear:
+        try:
+            await asyncio.wait_for(loc.clear(), timeout=3.0)
+        except Exception:
+            pass
+    try:
+        await asyncio.wait_for(dvt.__aexit__(None, None, None), timeout=3.0)
+    except Exception:
+        pass
+    try:
+        await asyncio.wait_for(rsd.close(), timeout=3.0)
+    except Exception:
+        pass
+
+
 async def _goldpot_countdown(loc):
     """3-2-1 倒數後送 loc.clear()，讓 isSimulatedBySoftware 瞬間清除。回傳是否正常完成。"""
     DRIFT_MAX = 4e-5
@@ -176,10 +201,15 @@ async def _goldpot_countdown(loc):
             return False
         drift_lat = max(-DRIFT_MAX, min(DRIFT_MAX, drift_lat + random.gauss(0, DRIFT_STEP)))
         drift_lng = max(-DRIFT_MAX, min(DRIFT_MAX, drift_lng + random.gauss(0, DRIFT_STEP)))
-        await loc.set(lat + drift_lat, lng + drift_lng)
+        if not await _safe_loc_set(loc, lat + drift_lat, lng + drift_lng):
+            if stop_flag.is_set():
+                return False
         event_queue.put({"goldpot_countdown": c, "lat": lat, "lng": lng})
         await asyncio.sleep(1)
-    await loc.clear()
+    try:
+        await asyncio.wait_for(loc.clear(), timeout=3.0)
+    except Exception:
+        pass
     event_queue.put({"goldpot_go": True})
     return True
 
@@ -256,7 +286,10 @@ async def _simulate(route, speed_kmh, loop_mode):
                     lng = lng1 + (lng2 - lng1) * t
                     drift_lat = max(-DRIFT_MAX, min(DRIFT_MAX, drift_lat + random.gauss(0, DRIFT_STEP)))
                     drift_lng = max(-DRIFT_MAX, min(DRIFT_MAX, drift_lng + random.gauss(0, DRIFT_STEP)))
-                    await loc.set(lat + drift_lat, lng + drift_lng)
+                    if not await _safe_loc_set(loc, lat + drift_lat, lng + drift_lng):
+                        if stop_flag.is_set():
+                            break
+                        continue
                     step_count += 1
                     _add_walked(step_dist_m)
                     pct = min(100.0, step_count / total_steps * 100)
@@ -295,19 +328,7 @@ async def _simulate(route, speed_kmh, loop_mode):
         state["running"] = False
         state["status"] = "idle"
         event_queue.put({"stopped": True})
-        try:
-            if not clear_called:
-                await loc.clear()
-        except Exception:
-            pass
-        try:
-            await dvt.__aexit__(None, None, None)
-        except Exception:
-            pass
-        try:
-            await rsd.close()
-        except Exception:
-            pass
+        await _safe_cleanup(loc, dvt, rsd, skip_clear=clear_called)
 
 
 def _gps_worker(route, speed_kmh, loop_mode):
@@ -355,7 +376,7 @@ async def _joystick_simulate():
                     _add_walked(step)
                     event_queue.put({"lat": lat, "lng": lng, "progress": 0.0,
                                      "walked_m": state["walked_m"], "remaining_min": 0.0})
-                    await loc.set(lat, lng)
+                    await _safe_loc_set(loc, lat, lng)
                 await asyncio.sleep(0.05)
             else:
                 if d != "stop" and lat is not None:
@@ -372,7 +393,7 @@ async def _joystick_simulate():
                     _add_walked(speed_mps * INTERVAL)
                     event_queue.put({"lat": lat, "lng": lng, "progress": 0.0,
                                      "walked_m": state["walked_m"], "remaining_min": 0.0})
-                    await loc.set(lat + drift_lat, lng + drift_lng)
+                    await _safe_loc_set(loc, lat + drift_lat, lng + drift_lng)
                 await asyncio.sleep(INTERVAL)
 
             prev_dir = d
@@ -381,18 +402,7 @@ async def _joystick_simulate():
         state["status"] = "idle"
         state["joystick_dir"] = "stop"
         event_queue.put({"stopped": True})
-        try:
-            await loc.clear()
-        except Exception:
-            pass
-        try:
-            await dvt.__aexit__(None, None, None)
-        except Exception:
-            pass
-        try:
-            await rsd.close()
-        except Exception:
-            pass
+        await _safe_cleanup(loc, dvt, rsd)
 
 
 def _joystick_thread_worker():
@@ -509,7 +519,9 @@ async def _patrol_simulate(waypoints, dwell_sec, patrol_loop=False):
                         break
                     drift_lat = max(-DRIFT_MAX, min(DRIFT_MAX, drift_lat + random.gauss(0, DRIFT_STEP)))
                     drift_lng = max(-DRIFT_MAX, min(DRIFT_MAX, drift_lng + random.gauss(0, DRIFT_STEP)))
-                    await loc.set(lat + drift_lat, lng + drift_lng)
+                    if not await _safe_loc_set(loc, lat + drift_lat, lng + drift_lng):
+                        if stop_flag.is_set():
+                            break
                     remaining = dwell_sec - elapsed
                     progress = ((idx + elapsed / dwell_sec) / len(waypoints)) * 100
                     dwell_pct = (elapsed / dwell_sec) * 100
@@ -537,19 +549,7 @@ async def _patrol_simulate(waypoints, dwell_sec, patrol_loop=False):
         state["running"] = False
         state["status"] = "idle"
         event_queue.put({"stopped": True})
-        try:
-            if not clear_called:
-                await loc.clear()
-        except Exception:
-            pass
-        try:
-            await dvt.__aexit__(None, None, None)
-        except Exception:
-            pass
-        try:
-            await rsd.close()
-        except Exception:
-            pass
+        await _safe_cleanup(loc, dvt, rsd, skip_clear=clear_called)
 
 
 def _patrol_worker(waypoints, dwell_sec, patrol_loop=False):
@@ -617,7 +617,10 @@ async def _flower_simulate(center_lat, center_lng, dwell_sec):
             t = s / steps
             lat = pt1[0] + (pt2[0] - pt1[0]) * t
             lng = pt1[1] + (pt2[1] - pt1[1]) * t
-            await loc.set(lat, lng)
+            if not await _safe_loc_set(loc, lat, lng):
+                if stop_flag.is_set():
+                    break
+                continue
             state.update({"lat": lat, "lng": lng})
             event_queue.put({"lat": lat, "lng": lng})
             await asyncio.sleep(interval + random.uniform(-0.05, 0.1))
@@ -626,7 +629,10 @@ async def _flower_simulate(center_lat, center_lng, dwell_sec):
         while not stop_flag.is_set():
             dlat = random.gauss(0, 4e-6)
             dlng = random.gauss(0, 4e-6)
-            await loc.set(pt2[0] + dlat, pt2[1] + dlng)
+            if not await _safe_loc_set(loc, pt2[0] + dlat, pt2[1] + dlng):
+                if stop_flag.is_set():
+                    break
+                continue
             state.update({"lat": pt2[0] + dlat, "lng": pt2[1] + dlng})
             event_queue.put({"lat": pt2[0] + dlat, "lng": pt2[1] + dlng})
             await asyncio.sleep(0.5 + random.uniform(-0.05, 0.1))
@@ -634,18 +640,7 @@ async def _flower_simulate(center_lat, center_lng, dwell_sec):
         state["running"] = False
         state["status"] = "idle"
         event_queue.put({"stopped": True})
-        try:
-            await loc.clear()
-        except Exception:
-            pass
-        try:
-            await dvt.__aexit__(None, None, None)
-        except Exception:
-            pass
-        try:
-            await rsd.close()
-        except Exception:
-            pass
+        await _safe_cleanup(loc, dvt, rsd)
 
 
 def _flower_worker(center_lat, center_lng, dwell_sec):
@@ -709,7 +704,10 @@ async def _circle_simulate(center_lat, center_lng, radius_m, speed_kmh):
             lng = center_lng + d_lng * math.sin(angle)
             drift_lat = max(-DRIFT_MAX, min(DRIFT_MAX, drift_lat + random.gauss(0, DRIFT_STEP)))
             drift_lng = max(-DRIFT_MAX, min(DRIFT_MAX, drift_lng + random.gauss(0, DRIFT_STEP)))
-            await loc.set(lat + drift_lat, lng + drift_lng)
+            if not await _safe_loc_set(loc, lat + drift_lat, lng + drift_lng):
+                if stop_flag.is_set():
+                    break
+                continue
             state.update({"lat": lat, "lng": lng})
             event_queue.put({"lat": lat, "lng": lng})
             angle = (angle + angular_step) % (2 * math.pi)
@@ -718,18 +716,7 @@ async def _circle_simulate(center_lat, center_lng, radius_m, speed_kmh):
         state["running"] = False
         state["status"] = "idle"
         event_queue.put({"stopped": True})
-        try:
-            await loc.clear()
-        except Exception:
-            pass
-        try:
-            await dvt.__aexit__(None, None, None)
-        except Exception:
-            pass
-        try:
-            await rsd.close()
-        except Exception:
-            pass
+        await _safe_cleanup(loc, dvt, rsd)
 
 
 def _circle_worker(center_lat, center_lng, radius_m, speed_kmh):
@@ -748,6 +735,13 @@ def start_goldpot():
 def stop():
     stop_flag.set()
     state["status"] = "stopping"
+    def _force_stop():
+        time.sleep(10)
+        if state["running"]:
+            state["running"] = False
+            state["status"] = "idle"
+            event_queue.put({"stopped": True})
+    threading.Thread(target=_force_stop, daemon=True).start()
     return jsonify({"ok": True})
 
 
