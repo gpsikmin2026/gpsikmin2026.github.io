@@ -3,7 +3,7 @@
 GPsikmin Web UI
 執行：python3 pikmin_web.py
 """
-VERSION = "1.5.0"
+VERSION = "1.5.1"
 
 import asyncio
 import hashlib
@@ -139,21 +139,8 @@ tunneld_proc = None
 _tunneld_starting = False
 event_queue: queue.Queue = queue.Queue()
 
-# ── 步數追蹤 ──
-_steps_lock = threading.Lock()
-_steps_walked_m = 0.0          # 累計已走公尺（未領取）
-_steps_last_walked_m = 0.0     # 上次 state["walked_m"] 快照
-STEPS_PER_KM = 1300            # 每公里換算步數
-STEPS_MAX_PER_CLAIM = 5000     # 每次領取上限
-STEPS_DAILY_MAX = 50000        # 每日寫入上限
-_steps_today_claimed = 0       # 今日已領取步數
-_steps_today_date = ""         # 今日日期（YYYY-MM-DD）
-
 def _add_walked(meters):
-    global _steps_walked_m
     state["walked_m"] += meters
-    with _steps_lock:
-        _steps_walked_m += meters
 
 
 def _drain_event_queue():
@@ -166,6 +153,52 @@ def _drain_event_queue():
 
 
 LOC_SET_TIMEOUT = 5.0
+GPS_FAIL_MAX = 8
+RECONNECT_EVERY = 200  # Pi Zero CPU 較慢，200 次重連保險
+MEM_WARN_MB = 300      # Pi Zero 只有 512 MB
+
+async def _isleep(secs: float):
+    end = time.monotonic() + secs
+    while not stop_flag.is_set():
+        remaining = end - time.monotonic()
+        if remaining <= 0:
+            break
+        await asyncio.sleep(min(0.2, remaining))
+
+def _rss_mb() -> int:
+    try:
+        with open("/proc/self/status") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1]) // 1024
+    except Exception:
+        pass
+    return 0
+
+def _start_mem_watchdog():
+    def _watch():
+        while True:
+            time.sleep(30)
+            if not state["running"]:
+                continue
+            mb = _rss_mb()
+            if mb > MEM_WARN_MB:
+                event_queue.put({"warning": f"記憶體用量 {mb} MB 過高，自動停止以保護系統"})
+                stop_flag.set()
+    threading.Thread(target=_watch, daemon=True).start()
+
+async def _make_dvt_conn():
+    from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
+    from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
+    from pymobiledevice3.services.dvt.instruments.location_simulation import LocationSimulation
+    rsd_addr, rsd_port = get_rsd()
+    rsd = RemoteServiceDiscoveryService((rsd_addr, rsd_port))
+    await rsd.connect()
+    dvt = DvtProvider(rsd)
+    await dvt.__aenter__()
+    loc = LocationSimulation(dvt)
+    await loc.connect()
+    return loc, dvt, rsd
 
 async def _safe_loc_set(loc, lat, lng):
     try:
@@ -232,18 +265,6 @@ def get_rsd():
 
 
 async def _simulate(route, speed_kmh, loop_mode):
-    from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
-    from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
-    from pymobiledevice3.services.dvt.instruments.location_simulation import LocationSimulation
-
-    rsd_addr, rsd_port = get_rsd()
-    rsd = RemoteServiceDiscoveryService((rsd_addr, rsd_port))
-    await rsd.connect()
-    dvt = DvtProvider(rsd)
-    await dvt.__aenter__()
-    loc = LocationSimulation(dvt)
-    await loc.connect()
-
     base_speed_mps = speed_kmh / 3.6
     total_dist = sum(haversine(*route[i], *route[i + 1]) for i in range(len(route) - 1))
     total_steps = max(1, total_dist / base_speed_mps)
@@ -256,9 +277,11 @@ async def _simulate(route, speed_kmh, loop_mode):
     DRIFT_STEP = 6e-6
     drift_lat = random.uniform(-DRIFT_MAX/2, DRIFT_MAX/2)
     drift_lng = random.uniform(-DRIFT_MAX/2, DRIFT_MAX/2)
-    # 隨機停頓：每 40~120 步觸發一次（模擬看手機、等紅燈）
     steps_until_pause = random.randint(40, 120)
+    fail_count = 0
+    send_count = 0
 
+    loc, dvt, rsd = await _make_dvt_conn()
     clear_called = False
     try:
         while not stop_flag.is_set():
@@ -289,7 +312,18 @@ async def _simulate(route, speed_kmh, loop_mode):
                     if not await _safe_loc_set(loc, lat + drift_lat, lng + drift_lng):
                         if stop_flag.is_set():
                             break
+                        fail_count += 1
+                        if fail_count >= GPS_FAIL_MAX:
+                            event_queue.put({"warning": f"GPS 連續失敗 {fail_count} 次，自動停止"})
+                            stop_flag.set()
                         continue
+                    fail_count = 0
+                    send_count += 1
+                    if send_count >= RECONNECT_EVERY:
+                        await _safe_cleanup(loc, dvt, rsd, skip_clear=True)
+                        import gc; gc.collect()
+                        loc, dvt, rsd = await _make_dvt_conn()
+                        send_count = 0
                     step_count += 1
                     _add_walked(step_dist_m)
                     pct = min(100.0, step_count / total_steps * 100)
@@ -297,14 +331,12 @@ async def _simulate(route, speed_kmh, loop_mode):
                     state.update({"lat": lat, "lng": lng, "progress": pct, "remaining_min": remaining_min})
                     event_queue.put({"lat": lat, "lng": lng, "progress": pct,
                                      "walked_m": state["walked_m"], "remaining_min": remaining_min})
-                    # 速度抖動 ±15%，加 sleep jitter ±100ms
                     step_speed = max(3.0, min(25.0, speed_kmh * random.uniform(0.85, 1.15)))
                     sleep_t = base_speed_mps / (step_speed / 3.6) + random.uniform(-0.1, 0.15)
                     await asyncio.sleep(max(0.1, sleep_t))
-                    # 隨機停頓
                     steps_until_pause -= 1
                     if steps_until_pause <= 0 and not stop_flag.is_set():
-                        await asyncio.sleep(random.uniform(3.0, 25.0))
+                        await _isleep(random.uniform(3.0, 25.0))
                         steps_until_pause = random.randint(40, 120)
                 idx += step
 
@@ -336,17 +368,7 @@ def _gps_worker(route, speed_kmh, loop_mode):
 
 
 async def _joystick_simulate():
-    from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
-    from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
-    from pymobiledevice3.services.dvt.instruments.location_simulation import LocationSimulation
-
-    rsd_addr, rsd_port = get_rsd()
-    rsd = RemoteServiceDiscoveryService((rsd_addr, rsd_port))
-    await rsd.connect()
-    dvt = DvtProvider(rsd)
-    await dvt.__aenter__()
-    loc = LocationSimulation(dvt)
-    await loc.connect()
+    loc, dvt, rsd = await _make_dvt_conn()
 
     INTERVAL = 0.1
     DRIFT_MAX = 4e-5
@@ -485,16 +507,7 @@ def start_patrol():
 
 
 async def _patrol_simulate(waypoints, dwell_sec, patrol_loop=False):
-    from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
-    from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
-    from pymobiledevice3.services.dvt.instruments.location_simulation import LocationSimulation
-    rsd_addr, rsd_port = get_rsd()
-    rsd = RemoteServiceDiscoveryService((rsd_addr, rsd_port))
-    await rsd.connect()
-    dvt = DvtProvider(rsd)
-    await dvt.__aenter__()
-    loc = LocationSimulation(dvt)
-    await loc.connect()
+    loc, dvt, rsd = await _make_dvt_conn()
 
     DRIFT_MAX = 4e-5
     DRIFT_STEP = 6e-6
@@ -583,17 +596,7 @@ def start_flower():
 
 
 async def _flower_simulate(center_lat, center_lng, dwell_sec):
-    from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
-    from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
-    from pymobiledevice3.services.dvt.instruments.location_simulation import LocationSimulation
-
-    rsd_addr, rsd_port = get_rsd()
-    rsd = RemoteServiceDiscoveryService((rsd_addr, rsd_port))
-    await rsd.connect()
-    dvt = DvtProvider(rsd)
-    await dvt.__aenter__()
-    loc = LocationSimulation(dvt)
-    await loc.connect()
+    loc, dvt, rsd = await _make_dvt_conn()
 
     # pt2 = 使用者選的定位點；pt1 = 自動在 5m 外隨機方向產生
     OFFSET_M = 5
@@ -675,17 +678,7 @@ def start_circle():
 
 
 async def _circle_simulate(center_lat, center_lng, radius_m, speed_kmh):
-    from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
-    from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
-    from pymobiledevice3.services.dvt.instruments.location_simulation import LocationSimulation
-
-    rsd_addr, rsd_port = get_rsd()
-    rsd = RemoteServiceDiscoveryService((rsd_addr, rsd_port))
-    await rsd.connect()
-    dvt = DvtProvider(rsd)
-    await dvt.__aenter__()
-    loc = LocationSimulation(dvt)
-    await loc.connect()
+    loc, dvt, rsd = await _make_dvt_conn()
 
     speed_mps = speed_kmh / 3.6
     interval = 1.0
@@ -744,38 +737,6 @@ def stop():
     threading.Thread(target=_force_stop, daemon=True).start()
     return jsonify({"ok": True})
 
-
-# ── 步數 API ──────────────────────────────────────────────
-def _steps_reset_if_new_day():
-    global _steps_today_claimed, _steps_today_date
-    today = time.strftime("%Y-%m-%d")
-    if _steps_today_date != today:
-        _steps_today_claimed = 0
-        _steps_today_date = today
-
-@app.route("/api/steps", methods=["GET"])
-def api_steps():
-    global _steps_walked_m, _steps_today_claimed
-    with _steps_lock:
-        _steps_reset_if_new_day()
-        avail = int(_steps_walked_m / 1000 * STEPS_PER_KM)
-        daily_room = max(0, STEPS_DAILY_MAX - _steps_today_claimed)
-        give = min(avail, STEPS_MAX_PER_CLAIM, daily_room)
-        if give > 0:
-            consumed_m = give / STEPS_PER_KM * 1000
-            _steps_walked_m = max(0, _steps_walked_m - consumed_m)
-            _steps_today_claimed += give
-    return Response(str(give), mimetype="text/plain")
-
-
-@app.route("/api/steps/peek", methods=["GET"])
-def api_steps_peek():
-    with _steps_lock:
-        _steps_reset_if_new_day()
-        avail = int(_steps_walked_m / 1000 * STEPS_PER_KM)
-        daily_room = max(0, STEPS_DAILY_MAX - _steps_today_claimed)
-    return jsonify({"steps": avail, "today_claimed": _steps_today_claimed,
-                     "daily_room": daily_room, "daily_max": STEPS_DAILY_MAX})
 
 
 # ── OTA 更新 ──────────────────────────────────────────────
@@ -1636,51 +1597,6 @@ input[type=time] { background: #2a2a4e; border: 1px solid #3a3a6e; color: #eee; 
     </div>
   </div>
 
-  <div id="steps-panel" class="panel-wrap">
-    <button class="panel-toggle" onclick="togglePanel('steps-content','steps-arrow')">
-      👟 自動加步數 <span id="steps-arrow">▸</span>
-    </button>
-    <div id="steps-content" class="panel-inner collapsed" style="flex-direction:column;align-items:stretch">
-      <div style="font-size:0.62rem;color:#888;margin-bottom:4px">模擬行走自動累計步數，iOS 自動化寫入 HealthKit</div>
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px">
-        <span style="font-size:0.7rem;color:#7ee8a2">待領取：</span>
-        <span id="steps-pending" style="font-size:0.9rem;font-weight:bold;color:#fff">0 步</span>
-      </div>
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-        <span style="font-size:0.62rem;color:#aaa">今日已寫入：</span>
-        <span id="steps-today" style="font-size:0.75rem;color:#ccc">0</span>
-        <span style="font-size:0.62rem;color:#666">/ 50,000 步</span>
-      </div>
-      <div style="background:#1a2a3a;border-radius:4px;height:6px;margin-bottom:6px;overflow:hidden">
-        <div id="steps-daily-bar" style="height:100%;background:#7ee8a2;width:0%;transition:width 0.5s"></div>
-      </div>
-      <button onclick="copyStepsUrl()" style="background:#3a6aaa;color:#fff;border:none;border-radius:5px;padding:7px;font-size:0.7rem;cursor:pointer;width:100%;margin-bottom:5px">
-        📋 複製步數 API 網址
-      </button>
-      <div id="steps-url-copied" style="display:none;font-size:0.6rem;color:#7ee8a2;text-align:center;margin-bottom:4px">✅ 已複製！</div>
-      <div style="font-size:0.55rem;color:#666;margin-bottom:4px">每次最多領 5,000 步，每日上限 50,000 步</div>
-      <div style="font-size:0.58rem;color:#999;line-height:1.7">
-        <b style="color:#ffd700">⚡ 建立捷徑（只需做一次）：</b><br>
-        ① 開啟 iPhone 的<b style="color:#fff">「捷徑」App</b><br>
-        ② 右上角點 <b style="color:#7ee8a2">＋</b> 新增捷徑<br>
-        ③ 點<b style="color:#7ee8a2">「加入動作」</b>→ 搜尋<b style="color:#fff">「取得URL的內容」</b>→ 點選<br>
-        ④ 點網址欄位，輸入 <b style="color:#7ee8a2">http://192.168.4.1:5000/api/steps</b><br>
-        ⑤ 點下方 <b style="color:#7ee8a2">＋</b> 再加一個動作 → 搜尋<b style="color:#fff">「紀錄健康樣本」</b>→ 點選<br>
-        ⑥ 類型選<b style="color:#fff">「步數」</b>，數值點一下選<b style="color:#fff">「URL 的內容」</b><br>
-        ⑦ 改名為<b style="color:#7ee8a2">「加步數」</b>→ 點<b style="color:#7ee8a2">「完成」</b><br>
-        <b style="color:#ffd700;margin-top:4px;display:inline-block">⏰ 設定自動執行（建立 4 個自動化）：</b><br>
-        ⑧ 切到<b style="color:#fff">「自動化」</b>頁籤 → 右上角 <b style="color:#7ee8a2">＋</b><br>
-        ⑨ 選<b style="color:#fff">「每天的特定時間」</b>→ 時間設 <b style="color:#7ee8a2">08:00</b><br>
-        ⑩ 動作選<b style="color:#fff">「執行捷徑」</b>→ 選<b style="color:#7ee8a2">「加步數」</b><br>
-        ⑪ 關閉<b style="color:#fff">「執行前先詢問」</b>→ 完成 ✅<br>
-        ⑫ 重複以上步驟，再建 <b style="color:#7ee8a2">12:00、18:00、22:00</b> 共四個
-      </div>
-      <div style="font-size:0.55rem;color:#666;margin-top:4px;line-height:1.5">
-        ⚠️ 設定 → 健康 → 資料權限 → 捷徑 → 允許寫入「步行」
-      </div>
-    </div>
-  </div>
-
   <div id="update-panel" class="panel-wrap">
     <button class="panel-toggle" onclick="togglePanel('update-content','update-arrow')">
       🔄 軟體更新 <span id="update-arrow">▸</span>
@@ -2166,6 +2082,7 @@ function connectSSE() {
   eventSource.onmessage=e=>{
     const d=JSON.parse(e.data);
     if (d.ping) return;
+    if (d.warning) { document.getElementById('info-text').textContent='⚠️ '+d.warning; }
     if (d.stopped) { onStopped(); return; }
     if (d.lat!=null) {
       posMarker.setLatLng([d.lat,d.lng]);
@@ -2645,17 +2562,6 @@ setInterval(async()=>{
   dot.style.color=age<4000?'#7ee8a2':'#555';
 },2000);
 
-setInterval(async()=>{
-  try {
-    const r=await (await fetch('/api/steps/peek')).json();
-    document.getElementById('steps-pending').textContent=r.steps.toLocaleString()+' 步';
-    document.getElementById('steps-today').textContent=r.today_claimed.toLocaleString();
-    const pct=Math.min(100,r.today_claimed/r.daily_max*100);
-    document.getElementById('steps-daily-bar').style.width=pct+'%';
-    document.getElementById('steps-daily-bar').style.background=pct>=100?'#e85050':'#7ee8a2';
-  } catch(_){}
-},5000);
-
 // ── GPX 匯入 ──
 function importGPX(event) {
   const file=event.target.files[0]; if(!file) return;
@@ -2740,18 +2646,6 @@ async function applyUpdate(){
 
 // ── 說明手冊 ──
 function openHelp(){ document.getElementById('help-overlay').classList.add('active'); }
-function copyStepsUrl(){
-  const url=location.protocol+'//'+location.host+'/api/steps';
-  const ta=document.createElement('textarea');
-  ta.value=url; ta.style.position='fixed'; ta.style.opacity='0';
-  document.body.appendChild(ta); ta.select();
-  try{ document.execCommand('copy');
-    const el=document.getElementById('steps-url-copied');
-    el.style.display='block'; el.textContent='✅ 已複製 '+url;
-    setTimeout(()=>el.style.display='none',4000);
-  }catch(e){ prompt('請手動複製這個網址：',url); }
-  document.body.removeChild(ta);
-}
 function closeHelp(){ document.getElementById('help-overlay').classList.remove('active'); }
 function toggleHs(id,arrowId){
   const el=document.getElementById(id), ar=document.getElementById(arrowId);
@@ -3614,42 +3508,6 @@ function removeMapOverlay() {
       </div>
 
       <div class="hs">
-        <button class="hs-btn" onclick="toggleHs('h14','ha14')">👟 自動加步數 <span id="ha14">▸</span></button>
-        <div class="hs-body" id="h14">
-          <p>模擬行走時自動累計步數（每公里約 1300 步），透過 iOS 捷徑自動寫入 HealthKit。</p>
-          <b>安全限制</b>
-          <ul>
-            <li>每次最多領取 <b>5,000 步</b>，模擬正常走路節奏</li>
-            <li>每日上限 <b>50,000 步</b>，超過自動停止（避免被 Niantic 偵測）</li>
-            <li>每天午夜自動重置額度</li>
-            <li>超過的步數會保留，下次自動化執行時繼續領取</li>
-          </ul>
-          <b>原理</b>
-          <ul>
-            <li>HealthKit 接受任何有權限的 App 寫入步數</li>
-            <li>Pikmin Bloom 讀取 HealthKit <b>所有來源</b>的步數，不區分手動或感應器</li>
-          </ul>
-          <b>建立捷徑（只需做一次）</b>
-          <ul>
-            <li>開啟「捷徑」App → <b>＋</b> → 加入動作 →<b>「取得URL的內容」</b></li>
-            <li>網址輸入 <b>http://192.168.4.1:5000/api/steps</b></li>
-            <li>再加動作 →<b>「紀錄健康樣本」</b>→ 類型選<b>步數</b>，數值選<b>「URL 的內容」</b></li>
-            <li>改名為「加步數」→ 完成</li>
-          </ul>
-          <b>設定自動執行</b>
-          <ul>
-            <li>「自動化」頁籤 → <b>＋</b> →「每天的特定時間」→ 分別建 <b>08:00、12:00、18:00、22:00</b> 四個</li>
-            <li>每個都選動作「執行捷徑」→「加步數」→ 關閉「執行前先詢問」</li>
-          </ul>
-          <b>前置設定</b>
-          <ul>
-            <li>設定 → 健康 → 資料權限與裝置 → 捷徑 → 允許寫入<b>「步行」</b></li>
-          </ul>
-          <div class="tip">手機連著皮皮盒 WiFi 時，捷徑會在背景自動執行。側欄面板可看「今日已寫入」進度。</div>
-        </div>
-      </div>
-
-      <div class="hs">
         <button class="hs-btn" onclick="toggleHs('h10','ha10')">🔍 搜尋與定位 <span id="ha10">▸</span></button>
         <div class="hs-body" id="h10">
           <ul>
@@ -3787,6 +3645,7 @@ if __name__ == "__main__":
     print("=" * 52)
 
     fix_dns()
+    _start_mem_watchdog()
 
     def cleanup(sig=None, frame=None):
         print("\n\n🛑 關閉中...")
