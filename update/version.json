@@ -1,6 +1,6 @@
 {
-  "version": "1.5.1",
+  "version": "1.5.2",
   "url": "https://gpsikmin2026.github.io/update/pikmin_web.py",
-  "sha256": "01bf9560a545de84a2dda6d579b76cb89caa7865d52f6430779dfce0267bc711",
-  "changelog": "v1.5.1：防 memory leak（DVT 定期重連）+ 停止按鈕更靈敏 + GPS 連線失敗自動停止"
+  "sha256": "071a27141119540895f9e925e8dcd8733553639de241167d6e65404f5489f394",
+  "changelog": "v1.5.2：新增 ⏸ 臨停GPS（凍結定位不清除，可加目標點續走）+ 修正臨停後從凍結位置起步（不再飛回舊中繼點1）+ 臨停續走自動切回單程走路（關閉折返/尋菇/瞬移/繞圈，避免錯亂）+ 說明手冊新增臨停章節"
 }
