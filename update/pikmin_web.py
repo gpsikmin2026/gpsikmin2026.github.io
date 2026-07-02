@@ -3,7 +3,7 @@
 GPsikmin Web UI
 執行：python3 pikmin_web.py
 """
-VERSION = "1.5.1"
+VERSION = "1.5.2"
 
 import asyncio
 import hashlib
@@ -134,6 +134,7 @@ state = {
 }
 stop_flag = threading.Event()
 goldpot_flag = threading.Event()
+hold_stop_flag = threading.Event()
 gps_thread = None
 tunneld_proc = None
 _tunneld_starting = False
@@ -145,6 +146,7 @@ def _add_walked(meters):
 
 def _drain_event_queue():
     """清空 event_queue，避免殘留 stopped 事件讓新 SSE 連線誤判結束。"""
+    hold_stop_flag.clear()
     while not event_queue.empty():
         try:
             event_queue.get_nowait()
@@ -359,8 +361,10 @@ async def _simulate(route, speed_kmh, loop_mode):
     finally:
         state["running"] = False
         state["status"] = "idle"
-        event_queue.put({"stopped": True})
-        await _safe_cleanup(loc, dvt, rsd, skip_clear=clear_called)
+        _hs = hold_stop_flag.is_set()
+        hold_stop_flag.clear()
+        event_queue.put({"hold_stopped": True} if _hs else {"stopped": True})
+        await _safe_cleanup(loc, dvt, rsd, skip_clear=clear_called or _hs)
 
 
 def _gps_worker(route, speed_kmh, loop_mode):
@@ -423,8 +427,10 @@ async def _joystick_simulate():
         state["running"] = False
         state["status"] = "idle"
         state["joystick_dir"] = "stop"
-        event_queue.put({"stopped": True})
-        await _safe_cleanup(loc, dvt, rsd)
+        _hs = hold_stop_flag.is_set()
+        hold_stop_flag.clear()
+        event_queue.put({"hold_stopped": True} if _hs else {"stopped": True})
+        await _safe_cleanup(loc, dvt, rsd, skip_clear=_hs)
 
 
 def _joystick_thread_worker():
@@ -561,8 +567,10 @@ async def _patrol_simulate(waypoints, dwell_sec, patrol_loop=False):
     finally:
         state["running"] = False
         state["status"] = "idle"
-        event_queue.put({"stopped": True})
-        await _safe_cleanup(loc, dvt, rsd, skip_clear=clear_called)
+        _hs = hold_stop_flag.is_set()
+        hold_stop_flag.clear()
+        event_queue.put({"hold_stopped": True} if _hs else {"stopped": True})
+        await _safe_cleanup(loc, dvt, rsd, skip_clear=clear_called or _hs)
 
 
 def _patrol_worker(waypoints, dwell_sec, patrol_loop=False):
@@ -642,8 +650,10 @@ async def _flower_simulate(center_lat, center_lng, dwell_sec):
     finally:
         state["running"] = False
         state["status"] = "idle"
-        event_queue.put({"stopped": True})
-        await _safe_cleanup(loc, dvt, rsd)
+        _hs = hold_stop_flag.is_set()
+        hold_stop_flag.clear()
+        event_queue.put({"hold_stopped": True} if _hs else {"stopped": True})
+        await _safe_cleanup(loc, dvt, rsd, skip_clear=_hs)
 
 
 def _flower_worker(center_lat, center_lng, dwell_sec):
@@ -708,8 +718,10 @@ async def _circle_simulate(center_lat, center_lng, radius_m, speed_kmh):
     finally:
         state["running"] = False
         state["status"] = "idle"
-        event_queue.put({"stopped": True})
-        await _safe_cleanup(loc, dvt, rsd)
+        _hs = hold_stop_flag.is_set()
+        hold_stop_flag.clear()
+        event_queue.put({"hold_stopped": True} if _hs else {"stopped": True})
+        await _safe_cleanup(loc, dvt, rsd, skip_clear=_hs)
 
 
 def _circle_worker(center_lat, center_lng, radius_m, speed_kmh):
@@ -737,6 +749,23 @@ def stop():
     threading.Thread(target=_force_stop, daemon=True).start()
     return jsonify({"ok": True})
 
+
+@app.route("/api/hold_stop", methods=["POST"])
+def api_hold_stop():
+    if not state["running"]:
+        return jsonify({"ok": False, "msg": "未在模擬中"})
+    hold_stop_flag.set()
+    stop_flag.set()
+    state["status"] = "stopping"
+    def _force_hold_stop():
+        time.sleep(10)
+        if state["running"]:
+            state["running"] = False
+            state["status"] = "idle"
+            hold_stop_flag.clear()
+            event_queue.put({"hold_stopped": True})
+    threading.Thread(target=_force_hold_stop, daemon=True).start()
+    return jsonify({"ok": True})
 
 
 # ── OTA 更新 ──────────────────────────────────────────────
@@ -780,22 +809,24 @@ def api_update_apply():
             if actual != expected_sha256:
                 return jsonify({"error": f"檔案驗證失敗（hash 不符）"}), 500
 
+        tmp_path = "/tmp/_gpsikmin_ota.py"
+        with open(tmp_path, "wb") as f:
+            f.write(new_code)
+
         if _is_overlayroot():
             real_path = _SELF_PATH.replace("/home/", "/media/root-ro/home/", 1)
             overlay_path = _SELF_PATH.replace("/home/", "/media/root-rw/overlay/home/", 1)
+            # 寫入 root-ro（重開機持久）
             subprocess.run(["sudo", "bash", "-c", "mount -o remount,rw /media/root-ro"], check=True, timeout=10)
-            os.makedirs(os.path.dirname(real_path), exist_ok=True)
-            with open(real_path, "wb") as f:
-                f.write(new_code)
+            subprocess.run(["sudo", "bash", "-c", f"mkdir -p {os.path.dirname(real_path)} && cp {tmp_path} {real_path}"], check=True, timeout=10)
             subprocess.run(["sudo", "bash", "-c", "mount -o remount,ro /media/root-ro"], check=True, timeout=10)
-            os.makedirs(os.path.dirname(overlay_path), exist_ok=True)
-            with open(overlay_path, "wb") as f:
-                f.write(new_code)
+            # 寫入 overlay（立即生效，用 cp 避免 self-copy 0-byte 問題）
+            subprocess.run(["sudo", "bash", "-c", f"mkdir -p {os.path.dirname(overlay_path)} && cp {tmp_path} {overlay_path}"], check=True, timeout=10)
+            # 更新 merged view 讓當前 process 可以讀到新版（重啟後也對）
+            subprocess.run(["sudo", "bash", "-c", f"cp {tmp_path} {_SELF_PATH}"], check=True, timeout=10)
         else:
             backup = _SELF_PATH + f".bak_{time.strftime('%Y%m%d_%H%M%S')}"
-            os.rename(_SELF_PATH, backup)
-            with open(_SELF_PATH, "wb") as f:
-                f.write(new_code)
+            subprocess.run(["sudo", "bash", "-c", f"cp {_SELF_PATH} {backup} && cp {tmp_path} {_SELF_PATH}"], check=True, timeout=10)
 
         threading.Thread(target=_delayed_restart, daemon=True).start()
         return jsonify({"ok": True, "new_version": info["version"],
@@ -1229,6 +1260,7 @@ input[type=checkbox] { accent-color: #7ee8a2; width: 15px; height: 15px; }
 #btn-start { background: #7ee8a2; color: #1a1a2e; }
 #btn-start:disabled { background: #555; color: #888; cursor: not-allowed; }
 #btn-stop     { background: #e87e7e; color: #1a1a2e; }
+#btn-hold-stop{ background: #d4920a; color: #fff; }
 #btn-goldpot  { background: #7a5a00; color: #ffe; }
 #btn-undo     { background: #4a4a6a; color: #ccc; }
 #btn-clear { background: #4a4a6a; color: #ccc; }
@@ -1335,7 +1367,7 @@ input[type=time] { background: #2a2a4e; border: 1px solid #3a3a6e; color: #eee; 
   /* 操作按鈕 2 欄 Grid */
   #action-btns { display: grid !important; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; }
   #action-btns .marker-type-row { grid-column: 1 / -1; }
-  #btn-start, #btn-stop { grid-column: 1 / -1; }
+  #btn-start, #btn-stop, #btn-hold-stop { grid-column: 1 / -1; }
 
   /* 尋菇/瞬移/繞圈展開面板 */
   #mushroom-dwell-row *, #flower-settings *, #circle-settings * { font-size: 0.82rem !important; }
@@ -1526,6 +1558,7 @@ input[type=time] { background: #2a2a4e; border: 1px solid #3a3a6e; color: #eee; 
       <button class="btn" id="btn-afk" onclick="toggleAfkMode()" style="background:#4a4a6a;color:#ccc" title="掛機：斷線自動重連並重啟">🌙 掛機模式</button>
       <button class="btn" id="btn-start"   onclick="startSim()" disabled>▶ 開始</button>
       <button class="btn" id="btn-stop"    onclick="stopSim()" style="display:none">⏹ 停止</button>
+      <button class="btn" id="btn-hold-stop" onclick="holdStopSim()" style="display:none" title="凍結GPS在當前位置（不清除定位），方便走向目標後繼續">⏸ 臨停GPS</button>
       <button class="btn" id="btn-goldpot" onclick="startGoldpot()" style="display:none" title="凍結GPS在金盆位置，倒數後斷線DVT，趁機互動金盆（需配合 IPLocate）">🪣 拉金盆</button>
       <button class="btn" id="btn-joystick" onclick="toggleJoystick()" style="background:#4a4a6a;color:#ccc" title="實體搖桿模式">🕹️ 搖桿 <span id="ble-dot" style="color:#555" title="搖桿未連線">●</span></button>
       <div style="display:flex;gap:4px;margin-top:4px">
@@ -1751,7 +1784,7 @@ function flyToSpot(lat, lng, name, type) {
 }
 
 function gotoCoord() {
-  const raw = document.getElementById('goto-input').value.trim();
+  const raw = document.getElementById('goto-input').value.trim().replace(/[()（）\[\]【】]/g, '');
   const parts = raw.split(/[\s,，]+/);
   if (parts.length < 2) { alert('格式錯誤，請輸入「緯度,經度」例如 25.05,121.53'); return; }
   const lat = parseFloat(parts[0]), lng = parseFloat(parts[1]);
@@ -1889,6 +1922,7 @@ async function startFlower() {
   isRunning = true;
   document.getElementById('btn-start').style.display = 'none';
   document.getElementById('btn-stop').style.display = '';
+  document.getElementById('btn-hold-stop').style.display = '';
   document.getElementById('btn-goldpot').style.display = '';
   document.getElementById('progress-fill').style.width = '0%';
   document.getElementById('progress-text').textContent = '';
@@ -1975,6 +2009,7 @@ async function startCircle() {
   isRunning = true;
   document.getElementById('btn-start').style.display = 'none';
   document.getElementById('btn-stop').style.display = '';
+  document.getElementById('btn-hold-stop').style.display = '';
   document.getElementById('btn-goldpot').style.display = '';
   document.getElementById('progress-fill').style.width = '0%';
   document.getElementById('progress-text').textContent = '';
@@ -2009,6 +2044,7 @@ async function startPatrol() {
   wpMarkers.forEach(m=>{ if(m.dragging) m.dragging.disable(); });
   document.getElementById('btn-start').style.display = 'none';
   document.getElementById('btn-stop').style.display = '';
+  document.getElementById('btn-hold-stop').style.display = '';
   document.getElementById('btn-goldpot').style.display = '';
   document.getElementById('progress-fill').style.width = '0%';
   document.getElementById('progress-text').textContent = '0%';
@@ -2052,6 +2088,7 @@ async function startSim() {
   wpMarkers.forEach(m=>{ if(m.dragging) m.dragging.disable(); });
   document.getElementById('btn-start').style.display='none';
   document.getElementById('btn-stop').style.display='';
+  document.getElementById('btn-hold-stop').style.display='';
   document.getElementById('btn-goldpot').style.display='';
   document.getElementById('progress-fill').style.width='0%';
   document.getElementById('progress-text').textContent='0%';
@@ -2083,6 +2120,7 @@ function connectSSE() {
     const d=JSON.parse(e.data);
     if (d.ping) return;
     if (d.warning) { document.getElementById('info-text').textContent='⚠️ '+d.warning; }
+    if (d.hold_stopped) { onHoldStopped(); return; }
     if (d.stopped) { onStopped(); return; }
     if (d.lat!=null) {
       posMarker.setLatLng([d.lat,d.lng]);
@@ -2168,6 +2206,7 @@ function onStopped() {
   wpMarkers.forEach(m=>{ if(m.dragging) m.dragging.enable(); });
   if (eventSource) { eventSource.close(); eventSource=null; }
   document.getElementById('btn-stop').style.display='none';
+  document.getElementById('btn-hold-stop').style.display='none';
   document.getElementById('btn-start').style.display='';
   document.getElementById('btn-goldpot').style.display='none';
   document.getElementById('stat-eta').style.display='none';
@@ -2789,6 +2828,7 @@ async function restoreRouteState() {
       updateUI();
       document.getElementById('btn-start').style.display='none';
       document.getElementById('btn-stop').style.display='';
+      document.getElementById('btn-hold-stop').style.display='';
       const loop=document.getElementById('loop').checked;
       document.getElementById('stat-walked').style.display='';
       document.getElementById('stat-eta').style.display=loop?'none':'';
@@ -2821,10 +2861,58 @@ async function restoreRouteState() {
 }
 
 // ── 從標記選點 ──
+async function holdStopSim() {
+  userStopped = true;
+  document.getElementById('btn-hold-stop').style.display = 'none';
+  document.getElementById('btn-stop').style.display = 'none';
+  document.getElementById('info-text').textContent = '⏸ 臨停中...';
+  await fetch('/api/hold_stop', {method: 'POST'});
+}
+
+function onHoldStopped() {
+  isRunning = false;
+  let frozen = lastStopPos;
+  if (posMarker) { const ll = posMarker.getLatLng(); frozen = {lat: ll.lat, lng: ll.lng}; map.removeLayer(posMarker); posMarker = null; }
+  lastStopPos = frozen;
+  if (eventSource) { eventSource.close(); eventSource = null; }
+  // 臨停：清掉舊路線，把凍結位置設為新起點（中繼點1），之後點地圖加目標點即成第2點，開始就會從凍結處走過去
+  waypoints = []; wpMarkers.forEach(m => map.removeLayer(m)); wpMarkers = [];
+  if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
+  routeCoords = []; routeDistKm = 0;
+  // 臨停續走固定是「走到新目標點」的單程走路：關掉折返（避免凍結點↔目標點來回彈跳）
+  // 以及尋菇/瞬移/繞圈（否則按開始會被 startSim 轉去那些模式而非走路過去）
+  const loopEl = document.getElementById('loop'); if (loopEl) loopEl.checked = false;
+  ['mushroom-mode','flower-mode','circle-mode'].forEach(id => { const el = document.getElementById(id); if (el) el.checked = false; });
+  onMushroomModeChange(); onFlowerModeChange(); onCircleModeChange();
+  if (frozen) addWaypoint(frozen.lat, frozen.lng);
+  document.getElementById('btn-stop').style.display = 'none';
+  document.getElementById('btn-hold-stop').style.display = 'none';
+  document.getElementById('btn-goldpot').style.display = 'none';
+  document.getElementById('stat-eta').style.display = 'none';
+  document.getElementById('btn-start').style.display = '';
+  document.getElementById('info-text').textContent = '⏸ GPS 已凍結，點地圖加目標點後按 ▶ 開始即可走過去（單程，已自動關閉折返）';
+  updateUI();
+}
+
 let pmFilter = 'all';
+let pmSortByDist = false;
+let pmNextOrder = 0;
 function openPickMarkersModal() {
+  pmNextOrder = 0;
+  pmSortByDist = true;
   document.getElementById('pickmarkers-overlay').style.display = 'block';
   document.getElementById('pickmarkers-modal').style.display = 'flex';
+  const sb = document.getElementById('pm-sort-btn');
+  if (sb) { sb.style.background = '#1c6fd4'; sb.style.color = '#fff'; }
+  renderPickList(pmFilter);
+}
+function togglePmSort() {
+  pmSortByDist = !pmSortByDist;
+  const sb = document.getElementById('pm-sort-btn');
+  if (sb) {
+    sb.style.background = pmSortByDist ? '#1c6fd4' : '';
+    sb.style.color = pmSortByDist ? '#fff' : '';
+  }
   renderPickList(pmFilter);
 }
 function closePickMarkersModal() {
@@ -2837,7 +2925,14 @@ function renderPickList(filter) {
   const ab = document.getElementById('pm-' + filter);
   if (ab) ab.classList.add('sf-active');
 
-  const list = filter === 'all' ? customMarkers : customMarkers.filter(m => m.type === filter);
+  let list = filter === 'all' ? customMarkers.slice() : customMarkers.filter(m => m.type === filter);
+  const curPos = posMarker ? posMarker.getLatLng() : (lastStopPos ? lastStopPos : map.getCenter());
+  if (pmSortByDist) {
+    list.sort((a, b) => {
+      const la = a.marker.getLatLng(), lb = b.marker.getLatLng();
+      return haversineJS(curPos.lat, curPos.lng, la.lat, la.lng) - haversineJS(curPos.lat, curPos.lng, lb.lat, lb.lng);
+    });
+  }
   const container = document.getElementById('pm-list');
   container.innerHTML = '';
   if (!list.length) {
@@ -2849,11 +2944,33 @@ function renderPickList(filter) {
     row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:7px 10px;font-size:0.68rem;border-bottom:1px solid #1a2240;cursor:pointer';
     const cb = document.createElement('input');
     cb.type = 'checkbox'; cb.style.flexShrink = '0';
+    cb.addEventListener('change', () => {
+      if (cb.checked) { cb.dataset.order = pmNextOrder++; }
+      else { delete cb.dataset.order; }
+      const badge = row.querySelector('.pm-order-badge');
+      if (cb.checked) {
+        if (!badge) {
+          const b = document.createElement('span');
+          b.className = 'pm-order-badge';
+          b.style.cssText = 'background:#1c6fd4;color:#fff;border-radius:9px;padding:1px 6px;font-size:0.6rem;flex-shrink:0';
+          row.appendChild(b);
+        }
+        row.querySelector('.pm-order-badge').textContent = '#' + cb.dataset.order;
+      } else {
+        if (badge) badge.remove();
+      }
+    });
     const emoji = MARKER_ICONS[entry.type] || '📍';
+    const ll = entry.marker.getLatLng();
+    const dist = haversineJS(curPos.lat, curPos.lng, ll.lat, ll.lng);
+    const distStr = dist < 1000 ? Math.round(dist) + 'm' : (dist/1000).toFixed(1) + 'km';
     const nameSpan = document.createElement('span');
     nameSpan.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
     nameSpan.textContent = emoji + ' ' + entry.name;
-    row.append(cb, nameSpan);
+    const distSpan = document.createElement('span');
+    distSpan.style.cssText = 'color:#7eb8f7;font-size:0.6rem;flex-shrink:0';
+    distSpan.textContent = distStr;
+    row.append(cb, nameSpan, distSpan);
     row.onmouseover = () => row.style.background = '#2a3a6e';
     row.onmouseout  = () => row.style.background = '';
     row._entry = entry;
@@ -2862,13 +2979,15 @@ function renderPickList(filter) {
   });
 }
 function confirmPickMarkers() {
-  const container = document.getElementById('pm-list');
-  const rows = Array.from(container.querySelectorAll('label'));
-  const selected = rows.filter(r => r._cb && r._cb.checked).map(r => r._entry);
-  if (!selected.length) { alert('請至少勾選一個標記'); return; }
-  selected.forEach(entry => {
-    const ll = entry.marker.getLatLng();
-    addWaypoint(ll.lat, ll.lng);
+  const checked = [...document.querySelectorAll('#pm-list input[type=checkbox]:checked')];
+  if (!checked.length) { alert('請至少勾選一個標記'); return; }
+  const ordered = checked.sort((a, b) => Number(a.dataset.order) - Number(b.dataset.order));
+  ordered.forEach(cb => {
+    const row = cb.closest('label');
+    if (row && row._entry) {
+      const ll = row._entry.marker.getLatLng();
+      addWaypoint(ll.lat, ll.lng);
+    }
   });
   closePickMarkersModal();
 }
@@ -3230,6 +3349,7 @@ function removeMapOverlay() {
     <button class="sf-btn" id="pm-plant"    onclick="renderPickList('plant')">🌸 大花</button>
     <button class="sf-btn" id="pm-special"  onclick="renderPickList('special')">⭐ 明信片</button>
     <button class="sf-btn" id="pm-pin"      onclick="renderPickList('pin')">📍 標記</button>
+    <button class="sf-btn" id="pm-sort-btn" onclick="togglePmSort()">📏 距離</button>
   </div>
   <div id="pm-list" style="overflow-y:auto;max-height:300px;border:1px solid #2a2a4e;border-radius:6px;background:#131d35"></div>
   <div style="display:flex;gap:6px">
@@ -3361,6 +3481,24 @@ function removeMapOverlay() {
             <li><b>暖機警告</b>：新起點距上次停止點 &gt;500m 時，跳出確認提示</li>
           </ul>
           <div class="tip">📱 手機版：標題列右側有「⬇ 收起」按鈕，收起工具列後地圖全螢幕；再按「⬆ 展開」恢復</div>
+        </div>
+      </div>
+
+      <div class="hs">
+        <button class="hs-btn" onclick="toggleHs('h14','ha14')">⏸ 臨停 GPS <span id="ha14">▸</span></button>
+        <div class="hs-body" id="h14">
+          <ul>
+            <li>模擬進行中會出現橘色「<b>⏸ 臨停GPS</b>」按鈕（與 ⏹ 停止並排），任何模式皆可用</li>
+            <li>按下後：<b>停止自動走路，但 GPS 凍結在當前位置</b>——不清除定位，iPhone 不會跳回真實位置</li>
+            <li>用途：路上發現附近有菇 / 花 → 按臨停 → 在地圖點該位置<b>加中繼點</b> → 按 ▶ 開始 → 走過去採集</li>
+            <li>採完後按 <b>⏹ 停止</b>（正常停止）才會清除模擬定位、讓 iPhone 回到真實 GPS</li>
+          </ul>
+          <table>
+            <tr><td>按鈕</td><td>行為</td></tr>
+            <tr><td><b>⏸ 臨停GPS</b></td><td>停在原地凍結，方便加新目標後繼續走</td></tr>
+            <tr><td><b>⏹ 停止</b></td><td>清除模擬定位，iPhone 回到真實位置</td></tr>
+          </table>
+          <div class="tip">臨停後想繼續，直接點地圖加中繼點再按 ▶ 開始即可，會從凍結位置走過去</div>
         </div>
       </div>
 
