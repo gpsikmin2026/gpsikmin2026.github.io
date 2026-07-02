@@ -3,7 +3,7 @@
 GPsikmin Web UI
 執行：python3 pikmin_web.py
 """
-VERSION = "1.5.2"
+VERSION = "1.5.3"
 
 import asyncio
 import hashlib
@@ -823,7 +823,8 @@ def api_update_apply():
             # 寫入 overlay（立即生效，用 cp 避免 self-copy 0-byte 問題）
             subprocess.run(["sudo", "bash", "-c", f"mkdir -p {os.path.dirname(overlay_path)} && cp {tmp_path} {overlay_path}"], check=True, timeout=10)
             # 更新 merged view 讓當前 process 可以讀到新版（重啟後也對）
-            subprocess.run(["sudo", "bash", "-c", f"cp {tmp_path} {_SELF_PATH}"], check=True, timeout=10)
+            # 用 cat 就地覆寫（O_TRUNC），避免 cp 在 overlayfs 觸發 whiteout ENOTEMPTY（"Directory not empty"）
+            subprocess.run(["sudo", "bash", "-c", f"cat {tmp_path} > {_SELF_PATH} && sync"], check=True, timeout=10)
         else:
             backup = _SELF_PATH + f".bak_{time.strftime('%Y%m%d_%H%M%S')}"
             subprocess.run(["sudo", "bash", "-c", f"cp {_SELF_PATH} {backup} && cp {tmp_path} {_SELF_PATH}"], check=True, timeout=10)
