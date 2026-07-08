@@ -1,6 +1,6 @@
 {
-  "version": "1.5.3",
+  "version": "1.5.4",
   "url": "https://gpsikmin2026.github.io/update/pikmin_web.py",
-  "sha256": "3db45d15918a91dbf053436d8490d1e8d5148e41daec68b6168987202e20ed87",
-  "changelog": "v1.5.3：修正 OTA 更新在 overlayroot 盒子誤報「寫入失敗」且不自動重啟的問題（cp→cat 就地覆寫，避開 overlayfs whiteout）"
+  "sha256": "d71808544d84f1898415f9deeb1d610097765ca426cc40815e924acbe69c9ac1",
+  "changelog": "v1.5.4：GPS 模擬遇到 iPhone USB 閃斷時自動重新連線（最多重試 6 次、約 30 秒），不再一失敗就整趟停止；停止原因會寫入系統紀錄方便排查"
 }
