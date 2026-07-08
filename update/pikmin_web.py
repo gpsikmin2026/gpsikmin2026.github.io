@@ -3,7 +3,7 @@
 GPsikmin Web UI
 執行：python3 pikmin_web.py
 """
-VERSION = "1.5.3"
+VERSION = "1.5.4"
 
 import asyncio
 import hashlib
@@ -155,7 +155,10 @@ def _drain_event_queue():
 
 
 LOC_SET_TIMEOUT = 5.0
-GPS_FAIL_MAX = 8
+GPS_FAIL_MAX = 3       # 連續失敗達此數即嘗試重建連線（USB 閃斷後 0.5~2 秒會自動重新枚舉）
+GPS_RETRY_DELAY = 1.0  # 每次失敗後的重試間隔（秒）
+RECONNECT_TRIES = 6    # DVT 重建連線最多嘗試次數
+RECONNECT_DELAY = 5.0  # 每次重建間隔（秒），共約 30 秒窗口
 RECONNECT_EVERY = 200  # Pi Zero CPU 較慢，200 次重連保險
 MEM_WARN_MB = 300      # Pi Zero 只有 512 MB
 
@@ -186,6 +189,7 @@ def _start_mem_watchdog():
             mb = _rss_mb()
             if mb > MEM_WARN_MB:
                 event_queue.put({"warning": f"記憶體用量 {mb} MB 過高，自動停止以保護系統"})
+                print(f"  ✖ 記憶體用量 {mb} MB 過高，自動停止模擬", flush=True)
                 stop_flag.set()
     threading.Thread(target=_watch, daemon=True).start()
 
@@ -223,6 +227,26 @@ async def _safe_cleanup(loc, dvt, rsd, skip_clear=False):
         await asyncio.wait_for(rsd.close(), timeout=3.0)
     except Exception:
         pass
+
+
+async def _reconnect_dvt(loc, dvt, rsd):
+    """USB 閃斷後重建 DVT 連線：清掉舊連線，最多重試 RECONNECT_TRIES 次
+    （約 30 秒窗口，等 USB 重新枚舉 + tunneld 重連）。
+    成功回傳新 (loc, dvt, rsd)，失敗或使用者停止回傳 None。"""
+    await _safe_cleanup(loc, dvt, rsd, skip_clear=True)
+    import gc; gc.collect()
+    for i in range(1, RECONNECT_TRIES + 1):
+        if stop_flag.is_set():
+            return None
+        event_queue.put({"warning": f"GPS 連線中斷，重新連線中…（{i}/{RECONNECT_TRIES}）"})
+        try:
+            conn = await _make_dvt_conn()
+            print(f"  ✅ DVT 重連成功（第 {i} 次），繼續模擬", flush=True)
+            return conn
+        except Exception as e:
+            print(f"  ⚠ DVT 重連失敗（{i}/{RECONNECT_TRIES}）：{e}", flush=True)
+            await _isleep(RECONNECT_DELAY)
+    return None
 
 
 async def _goldpot_countdown(loc):
@@ -316,8 +340,20 @@ async def _simulate(route, speed_kmh, loop_mode):
                             break
                         fail_count += 1
                         if fail_count >= GPS_FAIL_MAX:
-                            event_queue.put({"warning": f"GPS 連續失敗 {fail_count} 次，自動停止"})
-                            stop_flag.set()
+                            print(f"  ⚠ GPS 連續失敗 {fail_count} 次，嘗試重建連線", flush=True)
+                            new_conn = await _reconnect_dvt(loc, dvt, rsd)
+                            if new_conn is None:
+                                if not stop_flag.is_set():
+                                    event_queue.put({"warning": "GPS 連線中斷且重連失敗，自動停止"})
+                                    print("  ✖ DVT 重連失敗，自動停止模擬", flush=True)
+                                    stop_flag.set()
+                                break
+                            loc, dvt, rsd = new_conn
+                            fail_count = 0
+                            send_count = 0
+                            event_queue.put({"warning": "GPS 連線已恢復，繼續模擬"})
+                        else:
+                            await _isleep(GPS_RETRY_DELAY)
                         continue
                     fail_count = 0
                     send_count += 1
