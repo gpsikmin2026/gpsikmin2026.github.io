@@ -1,6 +1,6 @@
 {
-  "version": "1.5.4",
+  "version": "1.5.5",
   "url": "https://gpsikmin2026.github.io/update/pikmin_web.py",
-  "sha256": "d71808544d84f1898415f9deeb1d610097765ca426cc40815e924acbe69c9ac1",
-  "changelog": "v1.5.4：GPS 模擬遇到 iPhone USB 閃斷時自動重新連線（最多重試 6 次、約 30 秒），不再一失敗就整趟停止；停止原因會寫入系統紀錄方便排查"
+  "sha256": "e461b9b813edd5bc0e498619d145772edaeb6c75f71cff385e38a85a0cf71c7e",
+  "changelog": "v1.5.5：更新機制更穩定——套用更新時若系統儲存區忙碌，不再可能卡在半更新狀態或讓防斷電保護失效；疊圖上傳新增大小限制（8MB），避免超大圖造成當機。"
 }

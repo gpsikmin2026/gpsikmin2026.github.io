@@ -3,7 +3,7 @@
 GPsikmin Web UI
 執行：python3 pikmin_web.py
 """
-VERSION = "1.5.4"
+VERSION = "1.5.5"
 
 import asyncio
 import hashlib
@@ -115,6 +115,7 @@ _check_hardware()
 # ─────────────────────────────────────────────────────────
 
 app = Flask(__name__, static_folder="static")
+app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024  # 上傳上限 8MB：防大檔/解壓炸彈 OOM（Pi Zero 512MB）
 
 TUNNELD_URL = "http://127.0.0.1:49151"
 UPDATE_URL = "https://gpsikmin2026.github.io/update/version.json"
@@ -852,15 +853,22 @@ def api_update_apply():
         if _is_overlayroot():
             real_path = _SELF_PATH.replace("/home/", "/media/root-ro/home/", 1)
             overlay_path = _SELF_PATH.replace("/home/", "/media/root-rw/overlay/home/", 1)
-            # 寫入 root-ro（重開機持久）
-            subprocess.run(["sudo", "bash", "-c", "mount -o remount,rw /media/root-ro"], check=True, timeout=10)
-            subprocess.run(["sudo", "bash", "-c", f"mkdir -p {os.path.dirname(real_path)} && cp {tmp_path} {real_path}"], check=True, timeout=10)
-            subprocess.run(["sudo", "bash", "-c", "mount -o remount,ro /media/root-ro"], check=True, timeout=10)
-            # 寫入 overlay（立即生效，用 cp 避免 self-copy 0-byte 問題）
+            # ① 先更新 overlay + merged view（root-rw 永遠可寫、免 remount）→ 當前 process 與重啟後立即讀到新版。
+            #    先做這步：即使後面 root-ro 同步失敗，盒子仍跑新版、不會卡在半套狀態。
             subprocess.run(["sudo", "bash", "-c", f"mkdir -p {os.path.dirname(overlay_path)} && cp {tmp_path} {overlay_path}"], check=True, timeout=10)
-            # 更新 merged view 讓當前 process 可以讀到新版（重啟後也對）
             # 用 cat 就地覆寫（O_TRUNC），避免 cp 在 overlayfs 觸發 whiteout ENOTEMPTY（"Directory not empty"）
             subprocess.run(["sudo", "bash", "-c", f"cat {tmp_path} > {_SELF_PATH} && sync"], check=True, timeout=10)
+            # ② 再同步 root-ro（重開機持久層）。remount rw 後「無論成敗都要 remount 回 ro」，
+            #    否則 remount,ro 若丟 EBUSY（盒子上常見）會把 root-ro 留在可寫狀態，防斷電保護失效到重開機。
+            subprocess.run(["sudo", "bash", "-c", "mount -o remount,rw /media/root-ro"], check=True, timeout=10)
+            try:
+                subprocess.run(["sudo", "bash", "-c", f"mkdir -p {os.path.dirname(real_path)} && cp {tmp_path} {real_path} && sync"], check=True, timeout=10)
+            finally:
+                try:
+                    subprocess.run(["sudo", "bash", "-c", "mount -o remount,ro /media/root-ro"], check=True, timeout=10)
+                except subprocess.CalledProcessError:
+                    time.sleep(1)  # EBUSY 常見，稍等再試一次確保還原唯讀
+                    subprocess.run(["sudo", "bash", "-c", "sync && mount -o remount,ro /media/root-ro"], timeout=10)
         else:
             backup = _SELF_PATH + f".bak_{time.strftime('%Y%m%d_%H%M%S')}"
             subprocess.run(["sudo", "bash", "-c", f"cp {_SELF_PATH} {backup} && cp {tmp_path} {_SELF_PATH}"], check=True, timeout=10)
@@ -1069,6 +1077,8 @@ def api_map_image():
     if "file" not in request.files:
         return jsonify({"error": "no file"}), 400
     f = request.files["file"]
+    if not (f.mimetype or "").startswith("image/"):
+        return jsonify({"error": "只接受圖片檔"}), 400
     try:
         os.makedirs(UPLOAD_DIR, exist_ok=True)
         filename = f"overlay_{int(time.time())}.jpg"
