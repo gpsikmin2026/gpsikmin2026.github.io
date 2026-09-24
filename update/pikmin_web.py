@@ -3,7 +3,7 @@
 GPsikmin Web UI
 執行：python3 pikmin_web.py
 """
-VERSION = "1.5.16"
+VERSION = "1.5.18"
 
 import asyncio
 import fcntl
@@ -1435,87 +1435,104 @@ HTML_PAGE = r"""<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>🌱 GPsikmin</title>
+<script>try{if(localStorage.getItem('gpsikmin_theme')==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}</script>
 <link rel="stylesheet" href="/static/leaflet.css"/>
 <script src="/static/leaflet.js"></script>
 <style>
+/* ── 主題色變數：淺色=原值；深色見 :root[data-theme=dark] ── */
+:root{color-scheme:light;--c-15803d:#15803d;--c-1d4ed8:#1d4ed8;--c-1f2430:#1f2430;--c-2563eb:#2563eb;--c-374151:#374151;--c-4b5563:#4b5563;--c-5a3a8a:#5a3a8a;--c-6b7280:#6b7280;--c-9ca3af:#9ca3af;--c-b0b6bf:#b0b6bf;--c-b91c1c:#b91c1c;--c-be185d:#be185d;--c-d8dee6:#d8dee6;--c-dbe8ff:#dbe8ff;--c-dc2626:#dc2626;--c-dcfce7:#dcfce7;--c-e2e6ec:#e2e6ec;--c-e5e8ee:#e5e8ee;--c-e5e9ee:#e5e9ee;--c-eef0f3:#eef0f3;--c-eef1f4:#eef1f4;--c-eef4ff:#eef4ff;--c-f3ecff:#f3ecff;--c-f3f6f9:#f3f6f9;--c-f3faf5:#f3faf5;--c-f5f7f9:#f5f7f9;--c-f7f8fa:#f7f8fa;--c-f7f9fb:#f7f9fb;--c-fbe4ec:#fbe4ec;--c-fde2e2:#fde2e2;--c-fee2e2:#fee2e2;--c-fef3c7:#fef3c7;--c-fff:#fff;--c-fff7e6:#fff7e6;--c-ffffff:#ffffff;--sf-a94:rgba(255,255,255,0.94);--sf-a92:rgba(255,255,255,0.92)}
+:root[data-theme="dark"]{color-scheme:dark;--c-15803d:#4ade80;--c-1d4ed8:#8fb4ff;--c-1f2430:#e8ecf3;--c-2563eb:#7aa8ff;--c-374151:#cfd6e4;--c-4b5563:#aeb8cb;--c-5a3a8a:#c4a6ff;--c-6b7280:#97a2b7;--c-9ca3af:#7f8aa0;--c-b0b6bf:#5d677c;--c-b91c1c:#f87171;--c-be185d:#f472b6;--c-d8dee6:#3a445c;--c-dbe8ff:#243a66;--c-dc2626:#f87171;--c-dcfce7:#1d3a26;--c-e2e6ec:#2f384d;--c-e5e8ee:#333d55;--c-e5e9ee:#333d55;--c-eef0f3:#2f3850;--c-eef1f4:#2b3448;--c-eef4ff:#1f2b48;--c-f3ecff:#2c2444;--c-f3f6f9:#20283a;--c-f3faf5:#17301f;--c-f5f7f9:#232b3d;--c-f7f8fa:#20283a;--c-f7f9fb:#20283a;--c-fbe4ec:#3a2030;--c-fde2e2:#3a1f24;--c-fee2e2:#3a1f24;--c-fef3c7:#3a2f14;--c-fff:#1b2130;--c-fff7e6:#3a2f14;--c-ffffff:#1b2130;--sf-a94:rgba(27,33,48,0.94);--sf-a92:rgba(27,33,48,0.92)}
+/* 深色模式：地圖圖磚調暗（不反相，保留與遊戲畫面對照用的顏色）、Leaflet 元件配色 */
+:root[data-theme="dark"] .leaflet-container { background: #1b2130; }
+:root[data-theme="dark"] .leaflet-tile-pane { filter: brightness(0.72) contrast(1.05) saturate(0.85); }
+:root[data-theme="dark"] .leaflet-popup-content-wrapper, :root[data-theme="dark"] .leaflet-popup-tip { background: var(--c-fff); color: var(--c-1f2430); }
+:root[data-theme="dark"] .leaflet-bar a { background: var(--c-fff); color: var(--c-1f2430); border-bottom-color: var(--c-d8dee6); }
+:root[data-theme="dark"] .leaflet-bar a:hover { background: var(--c-eef1f4); }
+:root[data-theme="dark"] .leaflet-control-attribution { background: rgba(27,33,48,0.8) !important; color: var(--c-6b7280); }
+:root[data-theme="dark"] .leaflet-control-attribution a { color: var(--c-2563eb); }
+#btn-theme { min-width: 34px; }
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #eef1f4; color: #1f2430; height: 100vh; display: flex; flex-direction: row; overflow: hidden; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--c-eef1f4); color: var(--c-1f2430); height: 100vh; display: flex; flex-direction: row; overflow: hidden; }
 
 #map { flex: 1; min-width: 0; }
 
-#sidebar { width: 300px; flex-shrink: 0; display: flex; flex-direction: column; background: #ffffff; border-left: 1px solid #e2e6ec; overflow: hidden; }
+#sidebar { width: 300px; flex-shrink: 0; display: flex; flex-direction: column; background: var(--c-ffffff); border-left: 1px solid var(--c-e2e6ec); overflow: hidden; }
 #btn-sb-toggle { display: none; }
 
-#header { background: #ffffff; padding: 10px 12px 8px; border-bottom: 1px solid #e2e6ec; flex-shrink: 0; }
-#header h1 { font-size: 0.85rem; color: #15803d; font-weight: 700; }
+#header { background: var(--c-ffffff); padding: 10px 12px 8px; border-bottom: 1px solid var(--c-e2e6ec); flex-shrink: 0; }
+#header h1 { font-size: 0.85rem; color: var(--c-15803d); font-weight: 700; }
 
 /* 常駐操作列 */
-#pinned-actions { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-bottom: 1px solid #e2e6ec; flex-shrink: 0; }
+#pinned-actions { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-bottom: 1px solid var(--c-e2e6ec); flex-shrink: 0; }
 .big-btn { padding: 9px; border: none; border-radius: 8px; cursor: pointer; font-size: 0.78rem; font-weight: 700; touch-action: manipulation; width: 100%; }
 #btn-start { background: #7ee8a2; color: #14532d; }
-#btn-start:disabled { background: #eef1f4; color: #b0b6bf; cursor: not-allowed; }
+#btn-start:disabled { background: var(--c-eef1f4); color: var(--c-b0b6bf); cursor: not-allowed; }
 #btn-stop     { background: #ef4444; color: #fff; }
 #btn-hold-stop{ background: #d97706; color: #fff; }
 #btn-goldpot  { background: #92400e; color: #fff; }
 .mini-row { display: flex; gap: 6px; }
 .mini-row .big-btn { flex: 1; padding: 6px; font-size: 0.68rem; }
-#btn-undo, #btn-clear { background: #eef1f4; color: #374151; }
+#btn-undo, #btn-clear { background: var(--c-eef1f4); color: var(--c-374151); }
 
 /* Tab bar */
-#tab-bar { display: flex; border-bottom: 1px solid #e2e6ec; flex-shrink: 0; overflow-x: auto; }
-.tab-btn { flex: 1; background: none; border: none; padding: 8px 4px; font-size: 0.62rem; color: #6b7280; cursor: pointer; white-space: nowrap; border-bottom: 2px solid transparent; touch-action: manipulation; }
-.tab-btn.active { color: #15803d; border-bottom-color: #15803d; font-weight: 700; background: #f3faf5; }
+#tab-bar { display: flex; border-bottom: 1px solid var(--c-e2e6ec); flex-shrink: 0; overflow-x: auto; }
+.tab-btn { flex: 1; background: none; border: none; padding: 8px 4px; font-size: 0.62rem; color: var(--c-6b7280); cursor: pointer; white-space: nowrap; border-bottom: 2px solid transparent; touch-action: manipulation; }
+.tab-btn.active { color: var(--c-15803d); border-bottom-color: var(--c-15803d); font-weight: 700; background: var(--c-f3faf5); }
 
 #tab-panels { flex: 1; overflow-y: auto; }
 .tab-panel { display: none; flex-direction: column; gap: 8px; padding: 10px 12px; }
 .tab-panel.active { display: flex; }
 
 .ctrl { display: flex; align-items: center; gap: 5px; font-size: 0.66rem; }
-.ctrl label { color: #4b5563; white-space: nowrap; }
+.ctrl label { color: var(--c-4b5563); white-space: nowrap; }
 input[type=range] { width: 80px; accent-color: #15803d; }
-#speed-val { color: #15803d; font-weight: bold; min-width: 42px; }
+#speed-val { color: var(--c-15803d); font-weight: bold; min-width: 42px; }
 input[type=checkbox] { accent-color: #15803d; width: 15px; height: 15px; }
-.btn { padding: 4px 8px; border: none; border-radius: 6px; cursor: pointer; font-size: 0.64rem; font-weight: bold; white-space: nowrap; touch-action: manipulation; background:#eef1f4; color:#374151; }
-#btn-afk { background: #eef1f4; color: #374151; }
+.btn { padding: 4px 8px; border: none; border-radius: 6px; cursor: pointer; font-size: 0.64rem; font-weight: bold; white-space: nowrap; touch-action: manipulation; background:var(--c-eef1f4); color:var(--c-374151); }
+#btn-afk { background: var(--c-eef1f4); color: var(--c-374151); }
 #btn-afk.afk-on { background: #7b5ea7; color: #fff; }
 .marker-type-row { display:flex; gap:4px; width:100%; }
-.btn-mtype { flex:1; background:#eef1f4; color:#4b5563; border:none; border-radius:6px; padding:4px 2px; font-size:1rem; cursor:pointer; border:2px solid transparent; transition:border-color 0.1s; }
-.btn-mtype.active { border-color:#f59e0b; background:#fff7e6; }
+.btn-mtype { flex:1; display:flex; flex-direction:column; align-items:center; gap:1px; background:var(--c-eef1f4); color:var(--c-4b5563); border:none; border-radius:6px; padding:4px 2px; font-size:1.1rem; line-height:1.2; cursor:pointer; border:2px solid transparent; transition:border-color 0.1s; touch-action:manipulation; }
+.btn-mtype .mt-txt { font-size:0.6rem; font-weight:bold; }
+#marker-name { background:var(--c-f5f7f9); border:1px solid var(--c-d8dee6); color:var(--c-1f2430); border-radius:5px; padding:6px 8px; font-size:0.72rem; width:100%; box-sizing:border-box; }
+#marker-hint { font-size:0.6rem; color:var(--c-6b7280); line-height:1.5; }
+.btn-mtype.active { border-color:#f59e0b; background:var(--c-fff7e6); }
 
 /* 搜尋框 */
 .search-wrap { position: relative; display: flex; align-items: center; gap: 4px; width: 100%; }
-#search-input { background: #f5f7f9; border: 1px solid #d8dee6; color: #1f2430; border-radius: 5px; padding: 4px 7px; font-size: 0.64rem; flex: 1; min-width: 0; }
-#search-input::placeholder { color: #9ca3af; }
+#search-input { background: var(--c-f5f7f9); border: 1px solid var(--c-d8dee6); color: var(--c-1f2430); border-radius: 5px; padding: 4px 7px; font-size: 0.64rem; flex: 1; min-width: 0; }
+#search-input::placeholder { color: var(--c-9ca3af); }
 #btn-search { background: #5b8dee; color: #fff; border: none; border-radius: 5px; padding: 4px 8px; cursor: pointer; font-size: 0.64rem; font-weight: bold; flex-shrink: 0; }
-#search-results { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: #ffffff; border: 1px solid #d8dee6; border-radius: 6px; z-index: 9999; max-height: 210px; overflow-y: auto; display: none; box-shadow: 0 6px 18px rgba(20,30,50,.12); }
-#search-results div { padding: 6px 9px; cursor: pointer; font-size: 0.64rem; border-bottom: 1px solid #eef1f4; line-height: 1.3; }
-#search-results div:hover { background: #f3f6f9; }
+#search-results { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: var(--c-ffffff); border: 1px solid var(--c-d8dee6); border-radius: 6px; z-index: 9999; max-height: 210px; overflow-y: auto; display: none; box-shadow: 0 6px 18px rgba(20,30,50,.12); }
+#search-results div { padding: 6px 9px; cursor: pointer; font-size: 0.64rem; border-bottom: 1px solid var(--c-eef1f4); line-height: 1.3; }
+#search-results div:hover { background: var(--c-f3f6f9); }
 #search-results div:last-child { border-bottom: none; }
 
-.section-label { font-size: 0.62rem; color: #9ca3af; text-transform: uppercase; letter-spacing: .03em; margin-top: 4px; }
+.section-label { font-size: 0.62rem; color: var(--c-9ca3af); text-transform: uppercase; letter-spacing: .03em; margin-top: 4px; }
 .field-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-#route-name { background: #f5f7f9; border: 1px solid #d8dee6; color: #1f2430; border-radius: 5px; padding: 4px 7px; font-size: 0.64rem; width: 115px; }
-#route-select { background: #f5f7f9; border: 1px solid #d8dee6; color: #1f2430; border-radius: 5px; padding: 4px 5px; font-size: 0.64rem; flex: 1; min-width: 140px; max-width: 270px; }
-.btn-sm { padding: 4px 8px; border: none; border-radius: 5px; cursor: pointer; font-size: 0.64rem; font-weight: bold; white-space: nowrap; background:#eef1f4; color:#374151; }
+#route-name { background: var(--c-f5f7f9); border: 1px solid var(--c-d8dee6); color: var(--c-1f2430); border-radius: 5px; padding: 4px 7px; font-size: 0.64rem; width: 115px; }
+#route-select { background: var(--c-f5f7f9); border: 1px solid var(--c-d8dee6); color: var(--c-1f2430); border-radius: 5px; padding: 4px 5px; font-size: 0.64rem; flex: 1; min-width: 140px; max-width: 270px; }
+.btn-sm { padding: 4px 8px; border: none; border-radius: 5px; cursor: pointer; font-size: 0.64rem; font-weight: bold; white-space: nowrap; background:var(--c-eef1f4); color:var(--c-374151); }
 #btn-save { background: #5b8dee; color: #fff; }
-#btn-save:disabled { background: #eef1f4; color: #b0b6bf; cursor: not-allowed; }
+#btn-save:disabled { background: var(--c-eef1f4); color: var(--c-b0b6bf); cursor: not-allowed; }
 #btn-load { background: #7ee8a2; color: #14532d; }
-#btn-load:disabled { background: #eef1f4; color: #b0b6bf; cursor: not-allowed; }
+#btn-load:disabled { background: var(--c-eef1f4); color: var(--c-b0b6bf); cursor: not-allowed; }
 .btn-gpx  { background: #a855f7; color: #fff; cursor: pointer; }
 .btn-gpx input { display: none; }
-input[type=time] { background: #f5f7f9; border: 1px solid #d8dee6; color: #1f2430; border-radius: 5px; padding: 3px 5px; font-size: 0.64rem; }
+input[type=time] { background: var(--c-f5f7f9); border: 1px solid var(--c-d8dee6); color: var(--c-1f2430); border-radius: 5px; padding: 3px 5px; font-size: 0.64rem; }
 
 /* 資訊列 */
-#info-bar { position: fixed; top: 10px; right: 316px; max-width: 260px; background: rgba(255,255,255,0.92); backdrop-filter: blur(4px); border: 1px solid #e2e6ec; border-radius: 8px; padding: 6px 10px; font-size: 0.6rem; color: #1f2430; display: flex; flex-direction: column; gap: 3px; z-index: 500; pointer-events: none; box-shadow: 0 4px 14px rgba(20,30,50,.1); }
+#info-bar { position: fixed; top: 10px; right: 316px; max-width: 260px; background: var(--sf-a92); backdrop-filter: blur(4px); border: 1px solid var(--c-e2e6ec); border-radius: 8px; padding: 6px 10px; font-size: 0.6rem; color: var(--c-1f2430); display: flex; flex-direction: column; gap: 3px; z-index: 500; pointer-events: none; box-shadow: 0 4px 14px rgba(20,30,50,.1); }
 #info-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-#progress-bar { width: 100%; height: 6px; background: #eef1f4; border-radius: 3px; }
+#progress-bar { width: 100%; height: 6px; background: var(--c-eef1f4); border-radius: 3px; }
 #progress-fill { height: 100%; background: #15803d; border-radius: 3px; width: 0%; transition: width 0.5s; }
-.stat { color: #15803d; font-weight: bold; white-space: nowrap; }
+.stat { color: var(--c-15803d); font-weight: bold; white-space: nowrap; }
 .wp-label { background: #ef4444; color: #fff; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; box-shadow: 0 1px 4px rgba(0,0,0,.3); }
 
 /* 熱點篩選按鈕 */
-.sf-btn { background:#eef1f4;color:#4b5563;border:1px solid #d8dee6;border-radius:4px;padding:4px 8px;cursor:pointer;font-size:0.64rem; }
-.sf-btn:hover { background:#e5e9ee; }
+.sf-btn { background:var(--c-eef1f4);color:var(--c-4b5563);border:1px solid var(--c-d8dee6);border-radius:4px;padding:4px 8px;cursor:pointer;font-size:0.64rem; }
+.sf-btn:hover { background:var(--c-e5e9ee); }
 .sf-btn.sf-active { background:#5b8dee;color:#fff;border-color:#5b8dee; }
 
 /* GPS 十字標記 */
@@ -1528,19 +1545,23 @@ input[type=time] { background: #f5f7f9; border: 1px solid #d8dee6; color: #1f243
 /* 地圖疊圖 */
 #overlay-opacity { width: 100%; accent-color: #15803d; cursor: pointer; margin: 2px 0; }
 .overlay-active { background: #15803d !important; color: #fff !important; font-weight: bold; }
-.overlay-corner { width: 26px; height: 26px; background: #7ee8a2; border: 2px solid #fff; border-radius: 50%; cursor: move; box-shadow: 0 1px 4px rgba(0,0,0,.35); }
+.overlay-corner { width: 26px; height: 26px; background: #7ee8a2; border: 2px solid var(--c-fff); border-radius: 50%; cursor: move; box-shadow: 0 1px 4px rgba(0,0,0,.35); }
 
 /* GPS 座標跳轉框 */
-#goto-box { position: fixed; bottom: 24px; left: 10px; background: rgba(255,255,255,0.94); backdrop-filter: blur(4px); border: 1px solid #e2e6ec; border-radius: 8px; padding: 6px 8px; z-index: 500; display: flex; gap: 5px; align-items: center; box-shadow: 0 4px 14px rgba(20,30,50,.1); }
-#goto-box input { background: #f5f7f9; border: 1px solid #d8dee6; border-radius: 5px; color: #1f2430; padding: 4px 7px; font-size: 0.65rem; width: 155px; outline: none; }
-#goto-box input::placeholder { color: #9ca3af; }
+#goto-box { position: fixed; bottom: 24px; left: 10px; background: var(--sf-a94); backdrop-filter: blur(4px); border: 1px solid var(--c-e2e6ec); border-radius: 8px; padding: 6px 8px; z-index: 500; display: flex; gap: 5px; align-items: center; box-shadow: 0 4px 14px rgba(20,30,50,.1); }
+#goto-box input { background: var(--c-f5f7f9); border: 1px solid var(--c-d8dee6); border-radius: 5px; color: var(--c-1f2430); padding: 4px 7px; font-size: 0.65rem; width: 155px; outline: none; }
+#goto-box input::placeholder { color: var(--c-9ca3af); }
 #goto-box button { background: #5b8dee; border: none; border-radius: 5px; color: #fff; padding: 4px 8px; font-size: 0.65rem; cursor: pointer; white-space: nowrap; }
 #goto-box button:hover { background: #4a7de0; }
+.goto-wrap { position: relative; display: flex; align-items: center; }
+#goto-box .goto-wrap input { padding-right: 24px; }
+#goto-box #goto-clear { display: none; position: absolute; right: 2px; top: 50%; transform: translateY(-50%); background: transparent; color: var(--c-9ca3af); padding: 2px 6px; font-size: 0.8rem; line-height: 1; touch-action: manipulation; }
+#goto-box #goto-clear:hover { background: transparent; color: #ef4444; }
 
 /* 行動版 */
 @media (max-width: 768px) {
   body { flex-direction: column; }
-  #sidebar { width: 100%; border-left: none; border-top: 1px solid #e2e6ec; max-height: 58vh; transition: max-height 0.25s ease; }
+  #sidebar { width: 100%; border-left: none; border-top: 1px solid var(--c-e2e6ec); max-height: 58vh; transition: max-height 0.25s ease; }
   #sidebar.sb-collapsed { max-height: 44px !important; overflow: hidden; }
   #btn-sb-toggle { display: inline-block; }
   #map { flex: 1; min-height: 0; }
@@ -1552,7 +1573,10 @@ input[type=time] { background: #f5f7f9; border: 1px solid #d8dee6; color: #1f243
   .mini-row .big-btn { font-size: 0.8rem !important; padding: 9px !important; }
   .btn { font-size: 0.88rem !important; padding: 9px 12px !important; }
   .btn-sm { font-size: 0.86rem !important; padding: 9px 12px !important; }
-  .btn-mtype { font-size: 1.3rem !important; padding: 10px 4px !important; }
+  .btn-mtype { font-size: 1.3rem !important; padding: 8px 4px !important; }
+  .btn-mtype .mt-txt { font-size: 0.72rem !important; }
+  #marker-name { font-size: 0.9rem !important; padding: 9px 10px !important; }
+  #marker-hint { font-size: 0.72rem !important; }
 
   .ctrl { font-size: 0.82rem !important; gap: 8px; }
   .ctrl label { font-size: 0.82rem !important; }
@@ -1576,7 +1600,8 @@ input[type=time] { background: #f5f7f9; border: 1px solid #d8dee6; color: #1f243
   input[type=time] { font-size: 0.84rem !important; padding: 8px 6px !important; }
   .sf-btn { font-size: 0.84rem !important; padding: 9px 12px !important; }
 
-  #goto-box input { font-size: 0.84rem !important; padding: 8px 10px !important; width: 140px !important; }
+  #goto-box input { font-size: 0.84rem !important; padding: 8px 32px 8px 10px !important; width: 140px !important; }
+  #goto-box #goto-clear { font-size: 1.05rem !important; padding: 6px 8px !important; }
   #goto-box button { font-size: 0.84rem !important; padding: 8px 10px !important; }
 }
 #setup-overlay {
@@ -1585,8 +1610,8 @@ input[type=time] { background: #f5f7f9; border: 1px solid #d8dee6; color: #1f243
 }
 #setup-overlay.active { display: flex; }
 #setup-box {
-  background: #ffffff; border: 1px solid #e2e6ec; border-radius: 12px;
-  padding: 24px; width: 340px; max-width: 95vw; color: #1f2430;
+  background: var(--c-ffffff); border: 1px solid var(--c-e2e6ec); border-radius: 12px;
+  padding: 24px; width: 340px; max-width: 95vw; color: var(--c-1f2430);
   box-shadow: 0 12px 32px rgba(20,30,50,.2);
 }
 #setup-box h3 { font-size: 1.1rem; margin-bottom: 16px; text-align: center; }
@@ -1594,47 +1619,47 @@ input[type=time] { background: #f5f7f9; border: 1px solid #d8dee6; color: #1f243
   display: flex; align-items: flex-start; gap: 10px;
   padding: 8px; border-radius: 6px; margin-bottom: 6px; font-size: 0.85rem;
 }
-.setup-step.active { background: #f3faf5; }
+.setup-step.active { background: var(--c-f3faf5); }
 .setup-step.done { opacity: .5; }
 .step-icon { font-size: 1.1rem; width: 22px; flex-shrink: 0; text-align: center; }
 .step-text { flex: 1; }
 .step-title { font-weight: bold; margin-bottom: 2px; }
-.step-desc { color: #6b7280; font-size: 0.78rem; }
+.step-desc { color: var(--c-6b7280); font-size: 0.78rem; }
 #setup-msg {
-  background: #f5f7f9; border-radius: 8px; padding: 12px;
+  background: var(--c-f5f7f9); border-radius: 8px; padding: 12px;
   margin: 14px 0; font-size: 0.82rem; line-height: 1.5; min-height: 48px;
 }
 #setup-progress-bar {
-  height: 4px; background: #e2e6ec; border-radius: 2px; margin-bottom: 14px; overflow: hidden;
+  height: 4px; background: var(--c-e2e6ec); border-radius: 2px; margin-bottom: 14px; overflow: hidden;
 }
 #setup-progress-fill { height: 100%; background: #7ee8a2; width: 0; transition: width .4s; }
 #setup-action-btn {
   width: 100%; padding: 10px; background: #5b8dee; color: #fff;
   border: none; border-radius: 8px; font-size: 0.9rem; cursor: pointer;
 }
-#setup-action-btn:disabled { background: #eef1f4; color: #9ca3af; cursor: default; }
+#setup-action-btn:disabled { background: var(--c-eef1f4); color: var(--c-9ca3af); cursor: default; }
 #setup-action-btn.success { background: #16a34a; }
 
 /* ── 說明手冊 Modal ── */
 #help-overlay { display:none; position:fixed; inset:0; background:rgba(15,23,42,.55); z-index:9998; align-items:center; justify-content:center; }
 #help-overlay.active { display:flex; }
-#help-box { background:#ffffff; border:1px solid #e2e6ec; border-radius:12px; width:92vw; max-width:540px; max-height:88vh; display:flex; flex-direction:column; color:#1f2430; box-shadow:0 12px 32px rgba(20,30,50,.22); }
-#help-hdr { display:flex; justify-content:space-between; align-items:center; padding:13px 18px; border-bottom:1px solid #e2e6ec; flex-shrink:0; }
-#help-hdr span { font-size:1rem; font-weight:bold; color:#15803d; }
-#help-hdr button { background:none; border:none; color:#6b7280; font-size:1.3rem; cursor:pointer; line-height:1; padding:2px 6px; }
+#help-box { background:var(--c-ffffff); border:1px solid var(--c-e2e6ec); border-radius:12px; width:92vw; max-width:540px; max-height:88vh; display:flex; flex-direction:column; color:var(--c-1f2430); box-shadow:0 12px 32px rgba(20,30,50,.22); }
+#help-hdr { display:flex; justify-content:space-between; align-items:center; padding:13px 18px; border-bottom:1px solid var(--c-e2e6ec); flex-shrink:0; }
+#help-hdr span { font-size:1rem; font-weight:bold; color:var(--c-15803d); }
+#help-hdr button { background:none; border:none; color:var(--c-6b7280); font-size:1.3rem; cursor:pointer; line-height:1; padding:2px 6px; }
 #help-body { overflow-y:auto; padding:6px 0 12px; }
-.hs { border-bottom:1px solid #eef1f4; }
-.hs-btn { width:100%; background:none; border:none; color:#1f2430; font-size:0.85rem; font-weight:bold; padding:11px 18px; text-align:left; cursor:pointer; display:flex; justify-content:space-between; align-items:center; touch-action:manipulation; }
-.hs-btn:hover { background:#f7f9fb; }
-.hs-body { display:none; padding:2px 18px 12px; font-size:0.8rem; line-height:1.7; color:#4b5563; }
+.hs { border-bottom:1px solid var(--c-eef1f4); }
+.hs-btn { width:100%; background:none; border:none; color:var(--c-1f2430); font-size:0.85rem; font-weight:bold; padding:11px 18px; text-align:left; cursor:pointer; display:flex; justify-content:space-between; align-items:center; touch-action:manipulation; }
+.hs-btn:hover { background:var(--c-f7f9fb); }
+.hs-body { display:none; padding:2px 18px 12px; font-size:0.8rem; line-height:1.7; color:var(--c-4b5563); }
 .hs-body.open { display:block; }
-.hs-body b { color:#15803d; }
-.hs-body .tip { background:#eef4ff; border-left:3px solid #5b8dee; border-radius:4px; padding:6px 10px; margin:6px 0; font-size:0.78rem; color:#1d4ed8; }
+.hs-body b { color:var(--c-15803d); }
+.hs-body .tip { background:var(--c-eef4ff); border-left:3px solid #5b8dee; border-radius:4px; padding:6px 10px; margin:6px 0; font-size:0.78rem; color:var(--c-1d4ed8); }
 .hs-body ul { padding-left:1.2em; margin:4px 0; }
 .hs-body li { margin-bottom:3px; }
 .hs-body table { width:100%; border-collapse:collapse; margin:6px 0; font-size:0.78rem; }
-.hs-body td { padding:4px 8px; border:1px solid #e2e6ec; }
-.hs-body tr:first-child td { background:#f3f6f9; color:#15803d; font-weight:bold; }
+.hs-body td { padding:4px 8px; border:1px solid var(--c-e2e6ec); }
+.hs-body tr:first-child td { background:var(--c-f3f6f9); color:var(--c-15803d); font-weight:bold; }
 </style>
 </head>
 <body>
@@ -1642,26 +1667,30 @@ input[type=time] { background: #f5f7f9; border: 1px solid #d8dee6; color: #1f243
 <div id="map"></div>
 
 <div id="goto-box">
-  <input type="text" id="goto-input" placeholder="緯度,經度 (e.g. 25.05,121.53)"
-         onkeydown="if(event.key==='Enter')gotoCoord()">
+  <span class="goto-wrap">
+    <input type="text" id="goto-input" placeholder="緯度,經度 (e.g. 25.05,121.53)"
+           onkeydown="if(event.key==='Enter')gotoCoord()" oninput="updateGotoClear()" onfocus="this.select()">
+    <button type="button" id="goto-clear" title="清除輸入" aria-label="清除輸入" onclick="clearGoto()">✕</button>
+  </span>
   <button onclick="gotoCoord()">➤ 跳轉</button>
 </div>
 
 <div id="sidebar">
   <div id="header">
     <div style="display:flex;align-items:center;justify-content:space-between;width:100%">
-      <h1 style="width:auto">🌱 GPsikmin <span id="ver-tag" style="font-size:0.48rem;color:#9ca3af;font-weight:normal"></span></h1>
+      <h1 style="width:auto">🌱 GPsikmin <span id="ver-tag" style="font-size:0.48rem;color:var(--c-9ca3af);font-weight:normal"></span></h1>
       <div style="display:flex;gap:5px;align-items:center">
         <span id="battery-badge" style="display:none;align-items:center;gap:2px;font-size:0.62rem;font-weight:700;border-radius:10px;padding:2px 7px;white-space:nowrap"></span>
-        <button id="btn-sb-toggle" onclick="toggleSidebar()" style="background:#eef1f4;border:1px solid #d8dee6;color:#15803d;border-radius:6px;padding:4px 10px;font-size:0.68rem;cursor:pointer;touch-action:manipulation;white-space:nowrap">⬇ 收起</button>
-        <button onclick="openHelp()" style="background:#eef1f4;border:1px solid #d8dee6;color:#2563eb;border-radius:6px;padding:4px 10px;font-size:0.68rem;cursor:pointer;touch-action:manipulation;white-space:nowrap">❓ 說明</button>
+        <button id="btn-sb-toggle" onclick="toggleSidebar()" style="background:var(--c-eef1f4);border:1px solid var(--c-d8dee6);color:var(--c-15803d);border-radius:6px;padding:4px 10px;font-size:0.68rem;cursor:pointer;touch-action:manipulation;white-space:nowrap">⬇ 收起</button>
+        <button id="btn-theme" onclick="toggleTheme()" title="切換深色／淺色" aria-label="切換深色／淺色" style="background:var(--c-eef1f4);border:1px solid var(--c-d8dee6);color:var(--c-374151);border-radius:6px;padding:4px 8px;font-size:0.68rem;cursor:pointer;touch-action:manipulation;white-space:nowrap">🌙</button>
+        <button onclick="openHelp()" style="background:var(--c-eef1f4);border:1px solid var(--c-d8dee6);color:var(--c-2563eb);border-radius:6px;padding:4px 10px;font-size:0.68rem;cursor:pointer;touch-action:manipulation;white-space:nowrap">❓ 說明</button>
       </div>
     </div>
   </div>
 
   <div id="pinned-actions">
     <div class="mini-row">
-      <button class="big-btn" id="btn-connect" onclick="connectPhone()" style="background:#eef1f4;color:#374151" title="連線 iPhone">🔌 連線手機</button>
+      <button class="big-btn" id="btn-connect" onclick="connectPhone()" style="background:var(--c-eef1f4);color:var(--c-374151)" title="連線 iPhone">🔌 連線手機</button>
       <button class="big-btn" id="btn-afk" onclick="toggleAfkMode()" title="掛機：斷線自動重連並重啟">🌙 掛機模式</button>
     </div>
     <button class="big-btn" id="btn-start" onclick="startSim()" disabled>▶ 開始</button>
@@ -1698,16 +1727,16 @@ input[type=time] { background: #f5f7f9; border: 1px solid #d8dee6; color: #1f243
         <label for="mushroom-mode">🍄 尋菇模式</label>
       </div>
       <div id="mushroom-dwell-row" style="display:none;flex-direction:column;gap:4px;padding:2px 0">
-        <div style="display:flex;align-items:center;gap:4px;font-size:0.62rem;color:#4b5563">
+        <div style="display:flex;align-items:center;gap:4px;font-size:0.62rem;color:var(--c-4b5563)">
           <label>停留</label>
           <input type="number" id="dwell-minutes" value="5" min="1" max="30"
-                 style="width:38px;background:#f5f7f9;border:1px solid #d8dee6;color:#1f2430;border-radius:4px;padding:2px 4px;font-size:0.62rem;text-align:center">
+                 style="width:38px;background:var(--c-f5f7f9);border:1px solid var(--c-d8dee6);color:var(--c-1f2430);border-radius:4px;padding:2px 4px;font-size:0.62rem;text-align:center">
           <label>分鐘/點</label>
           <input type="checkbox" id="patrol-loop" style="margin-left:6px">
           <label for="patrol-loop">循環</label>
         </div>
         <button class="btn" onclick="openPickMarkersModal()"
-                style="background:#f3ecff;color:#5a3a8a;width:100%" title="從已存標記挑選尋菇點">
+                style="background:var(--c-f3ecff);color:var(--c-5a3a8a);width:100%" title="從已存標記挑選尋菇點">
           📌 從標記選點
         </button>
       </div>
@@ -1717,10 +1746,10 @@ input[type=time] { background: #f5f7f9; border: 1px solid #d8dee6; color: #1f243
         <label for="flower-mode">🌸 瞬間移動</label>
       </div>
       <div id="flower-settings" style="display:none;flex-direction:column;gap:5px;padding:2px 0">
-        <div style="display:flex;align-items:center;gap:4px;font-size:0.62rem;color:#4b5563">
+        <div style="display:flex;align-items:center;gap:4px;font-size:0.62rem;color:var(--c-4b5563)">
           <input type="text" id="flower-coord" placeholder="緯度,經度"
                  onkeydown="if(event.key==='Enter')flowerConfirmCoord()"
-                 style="flex:1;background:#f5f7f9;border:1px solid #d8dee6;color:#1f2430;border-radius:4px;padding:3px 5px;font-size:0.62rem;outline:none">
+                 style="flex:1;background:var(--c-f5f7f9);border:1px solid var(--c-d8dee6);color:var(--c-1f2430);border-radius:4px;padding:3px 5px;font-size:0.62rem;outline:none">
           <button onclick="flowerUseMapCenter()" title="使用地圖中心"
                   style="background:#5b8dee;border:none;border-radius:4px;color:#fff;padding:3px 6px;font-size:0.62rem;cursor:pointer;white-space:nowrap">📍 地圖中心</button>
         </div>
@@ -1728,11 +1757,11 @@ input[type=time] { background: #f5f7f9; border: 1px solid #d8dee6; color: #1f243
                 style="background:#7ee8a2;border:none;border-radius:5px;color:#14532d;padding:4px;font-size:0.65rem;cursor:pointer;width:100%">
           ✓ 確認座標（在地圖上標記）
         </button>
-        <div id="flower-confirmed" style="display:none;font-size:0.6rem;color:#15803d;padding:1px 0">
+        <div id="flower-confirmed" style="display:none;font-size:0.6rem;color:var(--c-15803d);padding:1px 0">
           ✅ 已設定目標點
         </div>
-        <div style="display:flex;align-items:center;gap:4px;font-size:0.62rem;color:#9ca3af">
-          <label style="color:#9ca3af">先移到目標 5m 外，再移過去並停留</label>
+        <div style="display:flex;align-items:center;gap:4px;font-size:0.62rem;color:var(--c-9ca3af)">
+          <label style="color:var(--c-9ca3af)">先移到目標 5m 外，再移過去並停留</label>
         </div>
       </div>
 
@@ -1741,10 +1770,10 @@ input[type=time] { background: #f5f7f9; border: 1px solid #d8dee6; color: #1f243
         <label for="circle-mode">🚶 繞圈種花</label>
       </div>
       <div id="circle-settings" style="display:none;flex-direction:column;gap:5px;padding:2px 0">
-        <div style="display:flex;align-items:center;gap:4px;font-size:0.62rem;color:#4b5563">
+        <div style="display:flex;align-items:center;gap:4px;font-size:0.62rem;color:var(--c-4b5563)">
           <input type="text" id="circle-coord" placeholder="緯度,經度"
                  onkeydown="if(event.key==='Enter')circleConfirmCoord()"
-                 style="flex:1;background:#f5f7f9;border:1px solid #d8dee6;color:#1f2430;border-radius:4px;padding:3px 5px;font-size:0.62rem;outline:none">
+                 style="flex:1;background:var(--c-f5f7f9);border:1px solid var(--c-d8dee6);color:var(--c-1f2430);border-radius:4px;padding:3px 5px;font-size:0.62rem;outline:none">
           <button onclick="circleUseMapCenter()" title="使用地圖中心"
                   style="background:#5b8dee;border:none;border-radius:4px;color:#fff;padding:3px 6px;font-size:0.62rem;cursor:pointer;white-space:nowrap">📍 地圖中心</button>
         </div>
@@ -1752,10 +1781,10 @@ input[type=time] { background: #f5f7f9; border: 1px solid #d8dee6; color: #1f243
                 style="background:#7ee8a2;border:none;border-radius:5px;color:#14532d;padding:4px;font-size:0.65rem;cursor:pointer;width:100%">
           ✓ 確認座標（在地圖上標記）
         </button>
-        <div id="circle-confirmed" style="display:none;font-size:0.6rem;color:#15803d;padding:1px 0">
+        <div id="circle-confirmed" style="display:none;font-size:0.6rem;color:var(--c-15803d);padding:1px 0">
           ✅ 已設定目標點
         </div>
-        <div style="display:flex;align-items:center;gap:4px;font-size:0.62rem;color:#4b5563">
+        <div style="display:flex;align-items:center;gap:4px;font-size:0.62rem;color:var(--c-4b5563)">
           <label>半徑</label>
           <input type="range" id="circle-radius" min="10" max="50" step="5" value="20"
                  oninput="document.getElementById('circle-radius-val').textContent=this.value+'m'"
@@ -1773,72 +1802,75 @@ input[type=time] { background: #f5f7f9; border: 1px solid #d8dee6; color: #1f243
     </div>
 
     <div class="tab-panel" id="tab-marks">
+      <div class="section-label">➕ 新增標記</div>
       <div class="marker-type-row" title="選擇標記類型後點地圖新增">
-        <button class="btn-mtype" id="mtype-mushroom" onclick="toggleMarkerMode('mushroom')" title="蘑菇">🍄</button>
-        <button class="btn-mtype" id="mtype-plant"    onclick="toggleMarkerMode('plant')"    title="大花">🌸</button>
-        <button class="btn-mtype" id="mtype-special"  onclick="toggleMarkerMode('special')"  title="明信片">⭐</button>
-        <button class="btn-mtype" id="mtype-pin"      onclick="toggleMarkerMode('pin')"      title="標記">📍</button>
+        <button class="btn-mtype" id="mtype-mushroom" onclick="toggleMarkerMode('mushroom')"><span>🍄</span><span class="mt-txt">蘑菇</span></button>
+        <button class="btn-mtype" id="mtype-plant"    onclick="toggleMarkerMode('plant')"><span>🌸</span><span class="mt-txt">大花</span></button>
+        <button class="btn-mtype" id="mtype-special"  onclick="toggleMarkerMode('special')"><span>⭐</span><span class="mt-txt">明信片</span></button>
+        <button class="btn-mtype" id="mtype-pin"      onclick="toggleMarkerMode('pin')"><span>📍</span><span class="mt-txt">標記</span></button>
       </div>
+      <input type="text" id="marker-name" placeholder="標記名稱（可空白）" maxlength="40" autocomplete="off">
+      <div id="marker-hint">① 點上方選類型　② 輸入名稱（可省略）　③ 點地圖放置</div>
       <button class="btn" onclick="openMarkersModal()"
-              style="background:#dbe8ff;color:#1d4ed8;width:100%" title="我的標記清單">📋 我的標記</button>
+              style="background:var(--c-dbe8ff);color:var(--c-1d4ed8);width:100%" title="我的標記清單">📋 我的標記</button>
 
       <div class="section-label">路線管理</div>
       <div class="field-row">
-        <span style="font-size:0.62rem;color:#6b7280">儲存：</span>
+        <span style="font-size:0.62rem;color:var(--c-6b7280)">儲存：</span>
         <input type="text" id="route-name" placeholder="路線名稱">
         <button class="btn-sm" id="btn-save" onclick="saveRoute()" disabled>💾 儲存</button>
       </div>
       <div class="field-row">
-        <span style="font-size:0.62rem;color:#6b7280">載入：</span>
+        <span style="font-size:0.62rem;color:var(--c-6b7280)">載入：</span>
         <select id="route-select"><option value="">-- 選擇路線 --</option></select>
         <button class="btn-sm" id="btn-load" onclick="loadRoute()" disabled>📂 載入</button>
       </div>
       <div class="field-row">
         <button class="btn-sm" id="btn-spots" onclick="openSpotsModal()"
-                style="background:#fbe4ec;color:#be185d" title="載入 pogoskill 熱點座標">🗺️ 熱點</button>
+                style="background:var(--c-fbe4ec);color:var(--c-be185d)" title="載入 pogoskill 熱點座標">🗺️ 熱點</button>
         <button class="btn-sm" id="btn-del"  onclick="deleteRoute()">🗑 刪除</button>
         <button class="btn-sm" id="btn-export" onclick="exportRoute()" disabled title="加密匯出 .gpsikmin">⬇ 匯出</button>
       </div>
       <div class="field-row">
-        <button class="btn-sm" style="background:#eef1f4;color:#374151" onclick="document.getElementById('import-file-input').click()">⬆ 匯入</button>
+        <button class="btn-sm" style="background:var(--c-eef1f4);color:var(--c-374151)" onclick="document.getElementById('import-file-input').click()">⬆ 匯入</button>
         <input type="file" id="import-file-input" accept="*/*" style="display:none" onchange="importRoute(event)">
         <label class="btn-sm btn-gpx" title="匯入 GPX">📁 GPX<input type="file" accept=".gpx" onchange="importGPX(event)"></label>
       </div>
     </div>
 
     <div class="tab-panel" id="tab-remote">
-      <button class="btn" id="btn-joystick" onclick="toggleJoystick()" style="background:#eef1f4;color:#374151;width:100%" title="實體搖桿模式">🕹️ 搖桿 <span id="ble-dot" style="color:#9ca3af" title="搖桿未連線">●</span></button>
+      <button class="btn" id="btn-joystick" onclick="toggleJoystick()" style="background:var(--c-eef1f4);color:var(--c-374151);width:100%" title="實體搖桿模式">🕹️ 搖桿 <span id="ble-dot" style="color:var(--c-9ca3af)" title="搖桿未連線">●</span></button>
       <div style="display:flex;gap:4px;margin-top:4px">
         <button id="btn-mode-coarse" onclick="setJoyMode('coarse')"
           style="flex:1;padding:6px;border:none;border-radius:4px;font-size:0.72rem;cursor:pointer;background:#7c6cd4;color:#fff">粗調</button>
         <button id="btn-mode-fine" onclick="setJoyMode('fine')"
-          style="flex:1;padding:6px;border:none;border-radius:4px;font-size:0.72rem;cursor:pointer;background:#eef1f4;color:#6b7280">微調</button>
+          style="flex:1;padding:6px;border:none;border-radius:4px;font-size:0.72rem;cursor:pointer;background:var(--c-eef1f4);color:var(--c-6b7280)">微調</button>
       </div>
       <div id="coarse-steps" style="display:flex;gap:3px;margin-top:3px">
-        <span style="font-size:0.65rem;color:#6b7280;align-self:center">跳距：</span>
-        <button onclick="setJoyStep(50)"  id="btn-step-50"  style="flex:1;padding:4px;border:none;border-radius:4px;font-size:0.68rem;cursor:pointer;background:#eef1f4;color:#6b7280">50m</button>
+        <span style="font-size:0.65rem;color:var(--c-6b7280);align-self:center">跳距：</span>
+        <button onclick="setJoyStep(50)"  id="btn-step-50"  style="flex:1;padding:4px;border:none;border-radius:4px;font-size:0.68rem;cursor:pointer;background:var(--c-eef1f4);color:var(--c-6b7280)">50m</button>
         <button onclick="setJoyStep(100)" id="btn-step-100" style="flex:1;padding:4px;border:none;border-radius:4px;font-size:0.68rem;cursor:pointer;background:#7c6cd4;color:#fff">100m</button>
-        <button onclick="setJoyStep(200)" id="btn-step-200" style="flex:1;padding:4px;border:none;border-radius:4px;font-size:0.68rem;cursor:pointer;background:#eef1f4;color:#6b7280">200m</button>
-        <button onclick="setJoyStep(500)" id="btn-step-500" style="flex:1;padding:4px;border:none;border-radius:4px;font-size:0.68rem;cursor:pointer;background:#eef1f4;color:#6b7280">500m</button>
+        <button onclick="setJoyStep(200)" id="btn-step-200" style="flex:1;padding:4px;border:none;border-radius:4px;font-size:0.68rem;cursor:pointer;background:var(--c-eef1f4);color:var(--c-6b7280)">200m</button>
+        <button onclick="setJoyStep(500)" id="btn-step-500" style="flex:1;padding:4px;border:none;border-radius:4px;font-size:0.68rem;cursor:pointer;background:var(--c-eef1f4);color:var(--c-6b7280)">500m</button>
       </div>
     </div>
 
     <div class="tab-panel" id="tab-overlay">
-      <div style="font-size:0.62rem;color:#6b7280;margin-bottom:4px">先把地圖移到截圖對應的區域，再上傳</div>
-      <label class="btn-sm" style="background:#dbe8ff;color:#1d4ed8;cursor:pointer;text-align:center;width:100%">
+      <div style="font-size:0.62rem;color:var(--c-6b7280);margin-bottom:4px">先把地圖移到截圖對應的區域，再上傳</div>
+      <label class="btn-sm" style="background:var(--c-dbe8ff);color:var(--c-1d4ed8);cursor:pointer;text-align:center;width:100%">
         📸 上傳遊戲截圖
         <input type="file" id="overlay-file" accept="image/*" style="display:none" onchange="uploadMapImage(event)">
       </label>
       <div id="overlay-controls" style="display:none;width:100%">
         <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">
           <button id="btn-overlay-pick" class="btn-sm" onclick="toggleOverlayPickMode()" style="flex:1">🎯 定位取點</button>
-          <button class="btn-sm" onclick="removeMapOverlay()" style="background:#fde2e2;color:#b91c1c">🗑 移除</button>
+          <button class="btn-sm" onclick="removeMapOverlay()" style="background:var(--c-fde2e2);color:var(--c-b91c1c)">🗑 移除</button>
         </div>
         <div style="display:flex;align-items:center;gap:6px;margin-top:5px">
-          <span style="font-size:0.63rem;color:#6b7280;white-space:nowrap">透明度</span>
+          <span style="font-size:0.63rem;color:var(--c-6b7280);white-space:nowrap">透明度</span>
           <input type="range" id="overlay-opacity" min="10" max="100" value="70" oninput="setOverlayOpacity(this.value)">
         </div>
-        <div style="font-size:0.62rem;color:#9ca3af;margin-top:4px">🟡 底部平移　🟢 角點縮放　🔴 右側旋轉</div>
+        <div style="font-size:0.62rem;color:var(--c-9ca3af);margin-top:4px">🟡 底部平移　🟢 角點縮放　🔴 右側旋轉</div>
         <input type="hidden" id="overlay-rotation" value="0">
         <input type="hidden" id="overlay-scale" value="100">
       </div>
@@ -1846,25 +1878,25 @@ input[type=time] { background: #f5f7f9; border: 1px solid #d8dee6; color: #1f243
 
     <div class="tab-panel" id="tab-update">
       <div style="display:flex;align-items:center;gap:8px">
-        <span style="font-size:0.65rem;color:#6b7280">目前版本：</span>
-        <span id="update-current" style="font-size:0.75rem;color:#15803d;font-weight:bold"></span>
+        <span style="font-size:0.65rem;color:var(--c-6b7280)">目前版本：</span>
+        <span id="update-current" style="font-size:0.75rem;color:var(--c-15803d);font-weight:bold"></span>
       </div>
       <button id="btn-update-check" onclick="checkUpdate()" style="background:#5b8dee;color:#fff;border:none;border-radius:5px;padding:8px;font-size:0.7rem;cursor:pointer;width:100%">
         🔍 檢查更新
       </button>
-      <div id="update-result" style="display:none;font-size:0.62rem;color:#374151;line-height:1.6;padding:8px;background:#f5f7f9;border-radius:4px"></div>
+      <div id="update-result" style="display:none;font-size:0.62rem;color:var(--c-374151);line-height:1.6;padding:8px;background:var(--c-f5f7f9);border-radius:4px"></div>
       <button id="btn-update-apply" onclick="applyUpdate()" style="display:none;background:#d97706;color:#fff;border:none;border-radius:5px;padding:8px;font-size:0.7rem;font-weight:bold;cursor:pointer;width:100%">
         ⬆ 立即更新
       </button>
-      <div style="font-size:0.56rem;color:#9ca3af">需要 iPhone USB 連線提供網路</div>
+      <div style="font-size:0.56rem;color:var(--c-9ca3af)">需要 iPhone USB 連線提供網路</div>
 
-      <div style="margin-top:10px;padding-top:10px;border-top:1px dashed #d8dee6">
+      <div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--c-d8dee6)">
         <div style="font-size:0.65rem;color:#d97706;font-weight:bold;margin-bottom:4px">🧪 實驗性：WiFi 直連（免插線）</div>
-        <div style="font-size:0.56rem;color:#9ca3af;margin-bottom:6px">先用 USB 插著手機、完成連線一次，按下方按鈕開啟手機的 WiFi 同步能力。之後再拔線試試「🔌 連線手機」看能不能不靠 USB 連上（不保證成功，失敗請照舊插線用）</div>
+        <div style="font-size:0.56rem;color:var(--c-9ca3af);margin-bottom:6px">先用 USB 插著手機、完成連線一次，按下方按鈕開啟手機的 WiFi 同步能力。之後再拔線試試「🔌 連線手機」看能不能不靠 USB 連上（不保證成功，失敗請照舊插線用）</div>
         <button id="btn-wifisync-enable" onclick="enableWifiSync()" style="background:#d97706;color:#fff;border:none;border-radius:5px;padding:7px;font-size:0.66rem;cursor:pointer;width:100%">
           🛜 開啟 WiFi 直連（需先插線）
         </button>
-        <div id="wifisync-result" style="display:none;font-size:0.6rem;color:#374151;line-height:1.5;padding:6px;background:#fef3c7;border-radius:4px;margin-top:5px"></div>
+        <div id="wifisync-result" style="display:none;font-size:0.6rem;color:var(--c-374151);line-height:1.5;padding:6px;background:var(--c-fef3c7);border-radius:4px;margin-top:5px"></div>
       </div>
     </div>
   </div>
@@ -1909,6 +1941,23 @@ function togglePanel(contentId, arrowId) {
 }
 
 // ── Tab 切換 ──
+// ── 深色／淺色主題（記在瀏覽器 localStorage，預設淺色）──
+function applyTheme(t) {
+  const dark = t === 'dark';
+  if (dark) document.documentElement.setAttribute('data-theme', 'dark');
+  else document.documentElement.removeAttribute('data-theme');
+  const b = document.getElementById('btn-theme');
+  if (b) { b.textContent = dark ? '☀️' : '🌙'; b.title = dark ? '切換為淺色' : '切換為深色'; }
+  try { localStorage.setItem('gpsikmin_theme', dark ? 'dark' : 'light'); } catch (e) {}
+}
+function toggleTheme() {
+  applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+}
+(function initTheme() {
+  const b = document.getElementById('btn-theme'), dark = document.documentElement.getAttribute('data-theme') === 'dark';
+  if (b) { b.textContent = dark ? '☀️' : '🌙'; b.title = dark ? '切換為淺色' : '切換為深色'; }
+})();
+
 function switchTab(name) {
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -1919,7 +1968,7 @@ function switchTab(name) {
 // ── 地圖點選 ──
 map.on('click', e => {
   if (isRunning) return;
-  if (markerMode) { showMarkerForm(e.latlng.lat, e.latlng.lng, activeMarkerType); return; }
+  if (markerMode) { placeMarkerAt(e.latlng.lat, e.latlng.lng); return; }
   if (overlayPickMode) { addWaypoint(e.latlng.lat, e.latlng.lng); return; }
   if (mapImageOverlay) return;
   addWaypoint(e.latlng.lat, e.latlng.lng);
@@ -1992,7 +2041,7 @@ function flyToSpot(lat, lng, name, type) {
     gotoMarker.bindPopup(
       `<div style="text-align:center;font-size:0.75rem">
         <b>${emoji} ${name}</b><br>
-        <span style="color:#6b7280;font-size:0.65rem">${lat.toFixed(5)}, ${lng.toFixed(5)}</span><br>
+        <span style="color:var(--c-6b7280);font-size:0.65rem">${lat.toFixed(5)}, ${lng.toFixed(5)}</span><br>
         <div style="display:flex;gap:4px;margin-top:6px;justify-content:center">
           <button onclick="addWaypoint(${lat},${lng});map.closePopup()"
             style="padding:3px 8px;background:#5b8dee;border:none;border-radius:4px;color:#fff;cursor:pointer;font-size:0.7rem">
@@ -2006,6 +2055,14 @@ function flyToSpot(lat, lng, name, type) {
       </div>`
     ).openPopup();
   }, 1300);
+}
+
+function updateGotoClear() {
+  document.getElementById('goto-clear').style.display = document.getElementById('goto-input').value ? 'block' : 'none';
+}
+function clearGoto() {
+  const inp = document.getElementById('goto-input');
+  inp.value = ''; updateGotoClear(); inp.focus();
 }
 
 function gotoCoord() {
@@ -2265,7 +2322,7 @@ async function startPatrol() {
   if (data.error) { alert('❌ '+data.error); return; }
 
   isRunning = true;
-  if (markerMode) { markerMode=false; activeMarkerType=null; document.querySelectorAll('.btn-mtype').forEach(b=>b.classList.remove('active')); map.getContainer().style.cursor=''; }
+  if (markerMode) { markerMode=false; activeMarkerType=null; document.querySelectorAll('.btn-mtype').forEach(b=>b.classList.remove('active')); map.getContainer().style.cursor=''; refreshMarkerHint(); }
   wpMarkers.forEach(m=>{ if(m.dragging) m.dragging.disable(); });
   document.getElementById('btn-start').style.display = 'none';
   document.getElementById('btn-stop').style.display = '';
@@ -2309,7 +2366,7 @@ async function startSim() {
   if (data.error) { alert('❌ '+data.error); return; }
 
   isRunning=true;
-  if (markerMode) { markerMode=false; activeMarkerType=null; document.querySelectorAll('.btn-mtype').forEach(b=>b.classList.remove('active')); map.getContainer().style.cursor=''; }
+  if (markerMode) { markerMode=false; activeMarkerType=null; document.querySelectorAll('.btn-mtype').forEach(b=>b.classList.remove('active')); map.getContainer().style.cursor=''; refreshMarkerHint(); }
   wpMarkers.forEach(m=>{ if(m.dragging) m.dragging.disable(); });
   document.getElementById('btn-start').style.display='none';
   document.getElementById('btn-stop').style.display='';
@@ -2524,12 +2581,12 @@ async function autoReconnect() {
       }
     } else {
       btn.textContent = '🔌 連線手機'; btn.disabled = false;
-      btn.style.background = '#e5e8ee'; btn.style.color = '#374151';
+      btn.style.background = 'var(--c-e5e8ee)'; btn.style.color = 'var(--c-374151)';
       document.getElementById('info-text').textContent = '❌ 重連失敗：' + data.message + '，請手動重連';
     }
   } catch {
     btn.textContent = '🔌 連線手機'; btn.disabled = false;
-    btn.style.background = '#e5e8ee'; btn.style.color = '#374151';
+    btn.style.background = 'var(--c-e5e8ee)'; btn.style.color = 'var(--c-374151)';
     document.getElementById('info-text').textContent = '❌ 重連異常，請手動重連';
   }
 }
@@ -2542,7 +2599,7 @@ async function connectPhone() {
     const st = await (await fetch('/api/setup/state')).json();
     if (st.status !== 'ready') {
       btn.textContent='🔌 連線手機'; btn.disabled=false;
-      btn.style.background='#e5e8ee'; btn.style.color='#374151';
+      btn.style.background='var(--c-e5e8ee)'; btn.style.color='var(--c-374151)';
       openSetupWizard(st);
       return;
     }
@@ -2567,11 +2624,11 @@ async function doConnectPhone() {
       btn.textContent='🔌 連線手機'; btn.disabled=false;
       btn.style.background='#e87e7e'; btn.style.color='#fff';
       document.getElementById('info-text').textContent='❌ '+data.message;
-      setTimeout(()=>{btn.style.background='#e5e8ee';btn.style.color='#374151';},3000);
+      setTimeout(()=>{btn.style.background='var(--c-e5e8ee)';btn.style.color='var(--c-374151)';},3000);
     }
   } catch(e){
     btn.textContent='🔌 連線手機'; btn.disabled=false;
-    btn.style.background='#e5e8ee'; btn.style.color='#374151';
+    btn.style.background='var(--c-e5e8ee)'; btn.style.color='var(--c-374151)';
   }
 }
 
@@ -2702,7 +2759,7 @@ async function searchPlace() {
   try {
     const res=await fetch('/geocode?q='+encodeURIComponent(q));
     const results=await res.json();
-    if (!results.length||results.error) { box.innerHTML='<div style="color:#6b7280">找不到結果</div>'; return; }
+    if (!results.length||results.error) { box.innerHTML='<div style="color:var(--c-6b7280)">找不到結果</div>'; return; }
     results.forEach(r=>{
       const div=document.createElement('div');
       div.textContent=r.name;
@@ -2783,10 +2840,10 @@ let joystickRunning = false;
 
 async function setJoyMode(m) {
   await fetch('/api/joystick/mode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:m})});
-  document.getElementById('btn-mode-coarse').style.background = m==='coarse'?'#7c6cd4':'#eef1f4';
-  document.getElementById('btn-mode-coarse').style.color = m==='coarse'?'#fff':'#6b7280';
-  document.getElementById('btn-mode-fine').style.background = m==='fine'?'#7c6cd4':'#eef1f4';
-  document.getElementById('btn-mode-fine').style.color = m==='fine'?'#fff':'#6b7280';
+  document.getElementById('btn-mode-coarse').style.background = m==='coarse'?'#7c6cd4':'var(--c-eef1f4)';
+  document.getElementById('btn-mode-coarse').style.color = m==='coarse'?'#fff':'var(--c-6b7280)';
+  document.getElementById('btn-mode-fine').style.background = m==='fine'?'#7c6cd4':'var(--c-eef1f4)';
+  document.getElementById('btn-mode-fine').style.color = m==='fine'?'#fff':'var(--c-6b7280)';
   document.getElementById('coarse-steps').style.display = m==='coarse'?'flex':'none';
 }
 
@@ -2794,8 +2851,8 @@ async function setJoyStep(s) {
   await fetch('/api/joystick/mode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({step_m:s})});
   [50,100,200,500].forEach(v=>{
     const b=document.getElementById('btn-step-'+v);
-    b.style.background=v===s?'#7c6cd4':'#eef1f4';
-    b.style.color=v===s?'#fff':'#6b7280';
+    b.style.background=v===s?'#7c6cd4':'var(--c-eef1f4)';
+    b.style.color=v===s?'#fff':'var(--c-6b7280)';
   });
 }
 
@@ -2803,8 +2860,8 @@ function toggleJoystick() {
   if (joystickRunning) {
     fetch('/stop',{method:'POST'});
     joystickRunning=false;
-    document.getElementById('btn-joystick').style.background='#e5e8ee';
-    document.getElementById('btn-joystick').style.color='#374151';
+    document.getElementById('btn-joystick').style.background='var(--c-e5e8ee)';
+    document.getElementById('btn-joystick').style.color='var(--c-374151)';
   } else {
     if (!posMarker) {
       const c=map.getCenter();
@@ -2820,10 +2877,10 @@ function toggleJoystick() {
 
 setInterval(async()=>{
   const dot=document.getElementById('ble-dot');
-  if (!joystickRunning) { dot.style.color='#9ca3af'; return; }
+  if (!joystickRunning) { dot.style.color='var(--c-9ca3af)'; return; }
   const s=await (await fetch('/status')).json();
   const age=Date.now()-(s.last_joystick_ms||0);
-  dot.style.color=age<4000?'#15803d':'#9ca3af';
+  dot.style.color=age<4000?'var(--c-15803d)':'var(--c-9ca3af)';
 },2000);
 
 // ── GPX 匯入 ──
@@ -2890,14 +2947,14 @@ async function enableWifiSync(){
   try {
     const r=await(await fetch('/api/experimental/wifi_sync_enable',{method:'POST'})).json();
     if (r.ok) {
-      res.style.background='#dcfce7'; res.style.color='#15803d';
+      res.style.background='var(--c-dcfce7)'; res.style.color='var(--c-15803d)';
       res.textContent='✅ 已開啟 WiFi 同步。現在可以試著拔掉 USB 線，再按「🔌 連線手機」測試看看。';
     } else {
-      res.style.background='#fee2e2'; res.style.color='#dc2626';
+      res.style.background='var(--c-fee2e2)'; res.style.color='var(--c-dc2626)';
       res.textContent='❌ 設定失敗：'+(r.output||'未知錯誤')+'（請確認手機已用 USB 連線且螢幕解鎖）';
     }
   } catch(e) {
-    res.style.background='#fee2e2'; res.style.color='#dc2626';
+    res.style.background='var(--c-fee2e2)'; res.style.color='var(--c-dc2626)';
     res.textContent='❌ 連線錯誤：'+e;
   }
   btn.disabled=false; btn.textContent='🛜 開啟 WiFi 直連（需先插線）';
@@ -2932,10 +2989,10 @@ async function checkUpdate(){
     if(r.error){ res.innerHTML='<span style="color:#e85050">❌ '+r.error+'</span>'; }
     else if(r.has_update){
       res.innerHTML='<b style="color:#e8a040">🆕 有新版本 v'+r.latest+'</b><br>'+
-        (r.changelog?'<span style="color:#6b7280">'+r.changelog+'</span>':'');
+        (r.changelog?'<span style="color:var(--c-6b7280)">'+r.changelog+'</span>':'');
       applyBtn.style.display='';
     } else {
-      res.innerHTML='<span style="color:#15803d">✅ 已是最新版本 v'+r.current+'</span>';
+      res.innerHTML='<span style="color:var(--c-15803d)">✅ 已是最新版本 v'+r.current+'</span>';
     }
     res.style.display='block';
   } catch(e){}
@@ -2951,11 +3008,11 @@ async function applyUpdate(){
     let r;
     if(_otaInfo){
       // 手機中繼：手機下載更新包 → 上傳盒子（盒子離線驗 ed25519 簽章，不信任手機）
-      res.innerHTML='<span style="color:#6b7280">⬇ 手機下載更新包中...</span>';
+      res.innerHTML='<span style="color:var(--c-6b7280)">⬇ 手機下載更新包中...</span>';
       const fr=await fetch(_otaInfo.url,{cache:'no-store'});
       if(!fr.ok) throw new Error('下載失敗 HTTP '+fr.status);
       const buf=await fr.arrayBuffer();
-      res.innerHTML='<span style="color:#6b7280">⬆ 上傳到盒子並驗證中...</span>';
+      res.innerHTML='<span style="color:var(--c-6b7280)">⬆ 上傳到盒子並驗證中...</span>';
       r=await(await fetch('/api/update/upload',{method:'POST',
         headers:{'Content-Type':'application/octet-stream','X-OTA-Version':_otaInfo.version,
                  'X-OTA-Sha256':_otaInfo.sha256||'','X-OTA-Sig':_otaInfo.sig||''},
@@ -2967,9 +3024,9 @@ async function applyUpdate(){
       res.innerHTML='<span style="color:#e85050">❌ '+r.error+'</span>';
       btn.disabled=false; btn.textContent='⬆ 立即更新';
     } else {
-      res.innerHTML='<span style="color:#15803d">✅ '+r.message+'</span>';
+      res.innerHTML='<span style="color:var(--c-15803d)">✅ '+r.message+'</span>';
       btn.style.display='none';
-      setTimeout(()=>{ res.innerHTML='<span style="color:#6b7280">🔄 重新載入頁面中...</span>'; },2000);
+      setTimeout(()=>{ res.innerHTML='<span style="color:var(--c-6b7280)">🔄 重新載入頁面中...</span>'; },2000);
       setTimeout(()=>{ location.reload(); },6000);
     }
   } catch(e){
@@ -3001,6 +3058,24 @@ function toggleMarkerMode(type) {
   document.querySelectorAll('.btn-mtype').forEach(b => b.classList.remove('active'));
   if (markerMode) document.getElementById('mtype-' + type).classList.add('active');
   map.getContainer().style.cursor = markerMode ? 'crosshair' : '';
+  refreshMarkerHint();
+}
+
+function refreshMarkerHint(msg) {
+  const el = document.getElementById('marker-hint');
+  if (!el) return;
+  if (msg) { el.textContent = msg; return; }
+  el.textContent = markerMode
+    ? '✅ 已選「' + (MARKER_ICONS[activeMarkerType]||'📍') + ' ' + MARKER_NAMES[activeMarkerType] + '」：現在點地圖放置（可連續放多個，再點一次按鈕結束）'
+    : '① 點上方選類型　② 輸入名稱（可省略）　③ 點地圖放置';
+}
+
+function placeMarkerAt(lat, lng) {
+  const inp = document.getElementById('marker-name');
+  const name = (inp.value || '').trim() || MARKER_NAMES[activeMarkerType];
+  addCustomMarker(lat, lng, name, activeMarkerType);
+  inp.value = '';
+  refreshMarkerHint('📌 已放置「' + (MARKER_ICONS[activeMarkerType]||'📍') + ' ' + name + '」。可輸入下一個名稱繼續點地圖，或再點一次類型按鈕結束');
 }
 
 function showMarkerForm(lat, lng, type) {
@@ -3017,7 +3092,7 @@ function showMarkerForm(lat, lng, type) {
   // 名稱輸入
   const input = document.createElement('input');
   input.type = 'text'; input.placeholder = '標記名稱（可空白）';
-  input.style.cssText = 'background:#eef1f4;border:1px solid #d8dee6;color:#1f2430;border-radius:5px;padding:5px 8px;font-size:0.85rem;width:100%';
+  input.style.cssText = 'background:var(--c-eef1f4);border:1px solid var(--c-d8dee6);color:var(--c-1f2430);border-radius:5px;padding:5px 8px;font-size:0.85rem;width:100%';
   form.appendChild(input);
 
   // 按鈕列
@@ -3025,7 +3100,7 @@ function showMarkerForm(lat, lng, type) {
   const ok = document.createElement('button'); ok.textContent = '確定';
   ok.style.cssText = 'flex:1;background:#7ee8a2;color:#1a1a2e;border:none;border-radius:5px;padding:5px;cursor:pointer;font-weight:bold;font-size:0.85rem';
   const cancel = document.createElement('button'); cancel.textContent = '取消';
-  cancel.style.cssText = 'flex:1;background:#e5e8ee;color:#374151;border:none;border-radius:5px;padding:5px;cursor:pointer;font-size:0.85rem';
+  cancel.style.cssText = 'flex:1;background:var(--c-e5e8ee);color:var(--c-374151);border:none;border-radius:5px;padding:5px;cursor:pointer;font-size:0.85rem';
   btnRow.append(ok, cancel); form.appendChild(btnRow);
 
   L.popup({closeButton:false, maxWidth:240}).setLatLng([lat,lng]).setContent(form).openOn(map);
@@ -3049,19 +3124,34 @@ function addCustomMarker(lat, lng, name, type='pin', save=true) {
 
   marker.on('click',()=>{
     const content=document.createElement('div');
-    content.style.cssText='min-width:130px;padding:2px';
-    content.innerHTML=`<b style="font-size:0.95rem">${emoji} ${name}</b>`;
+    content.style.cssText='min-width:170px;padding:2px;display:flex;flex-direction:column;gap:6px';
+    const head=document.createElement('b');
+    head.style.fontSize='0.95rem'; head.textContent=emoji+' '+entry.name;
+    const inp=document.createElement('input');
+    inp.type='text'; inp.value=entry.name; inp.maxLength=40; inp.placeholder='標記名稱';
+    inp.style.cssText='background:var(--c-eef1f4);border:1px solid var(--c-d8dee6);color:var(--c-1f2430);border-radius:5px;padding:5px 8px;font-size:0.85rem;width:100%;box-sizing:border-box';
+    const row=document.createElement('div'); row.style.cssText='display:flex;gap:6px';
+    const ren=document.createElement('button');
+    ren.textContent='💾 改名';
+    ren.style.cssText='flex:1;padding:5px;background:#7ee8a2;border:none;border-radius:4px;cursor:pointer;color:#1a1a2e;font-weight:bold;font-size:0.8rem';
+    ren.addEventListener('click',()=>{
+      entry.name=inp.value.trim()||MARKER_NAMES[type];
+      saveCustomMarkers(); map.closePopup();
+    });
+    inp.addEventListener('keydown',e=>{ if(e.key==='Enter') ren.click(); });
     const del=document.createElement('button');
     del.textContent='🗑 刪除';
-    del.style.cssText='display:block;margin-top:8px;padding:4px 10px;background:#e87e7e;border:none;border-radius:4px;cursor:pointer;color:#fff;font-size:0.8rem;width:100%';
+    del.style.cssText='flex:1;padding:5px;background:#e87e7e;border:none;border-radius:4px;cursor:pointer;color:#fff;font-size:0.8rem';
     del.addEventListener('click',()=>{
       map.removeLayer(marker);
       const idx=customMarkers.indexOf(entry);
       if(idx>=0) customMarkers.splice(idx,1);
       saveCustomMarkers(); map.closePopup();
     });
-    content.appendChild(del);
-    L.popup({maxWidth:200}).setLatLng([lat,lng]).setContent(content).openOn(map);
+    row.append(ren,del);
+    content.append(head,inp,row);
+    const ll=marker.getLatLng();
+    L.popup({maxWidth:220}).setLatLng([ll.lat,ll.lng]).setContent(content).openOn(map);
   });
 
   if(save) saveCustomMarkers();
@@ -3231,12 +3321,12 @@ function renderPickList(filter) {
   const container = document.getElementById('pm-list');
   container.innerHTML = '';
   if (!list.length) {
-    container.innerHTML = '<div style="color:#6b7280;text-align:center;padding:20px;font-size:0.72rem">尚無標記</div>';
+    container.innerHTML = '<div style="color:var(--c-6b7280);text-align:center;padding:20px;font-size:0.72rem">尚無標記</div>';
     return;
   }
   list.forEach(entry => {
     const row = document.createElement('label');
-    row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:7px 10px;font-size:0.68rem;border-bottom:1px solid #eef0f3;cursor:pointer';
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:7px 10px;font-size:0.68rem;border-bottom:1px solid var(--c-eef0f3);cursor:pointer';
     const cb = document.createElement('input');
     cb.type = 'checkbox'; cb.style.flexShrink = '0';
     cb.addEventListener('change', () => {
@@ -3263,10 +3353,10 @@ function renderPickList(filter) {
     nameSpan.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
     nameSpan.textContent = emoji + ' ' + entry.name;
     const distSpan = document.createElement('span');
-    distSpan.style.cssText = 'color:#2563eb;font-size:0.6rem;flex-shrink:0';
+    distSpan.style.cssText = 'color:var(--c-2563eb);font-size:0.6rem;flex-shrink:0';
     distSpan.textContent = distStr;
     row.append(cb, nameSpan, distSpan);
-    row.onmouseover = () => row.style.background = '#eef4ff';
+    row.onmouseover = () => row.style.background = 'var(--c-eef4ff)';
     row.onmouseout  = () => row.style.background = '';
     row._entry = entry;
     row._cb = cb;
@@ -3311,12 +3401,12 @@ function renderMarkersList(filter) {
   const container = document.getElementById('mm-list');
   container.innerHTML = '';
   if (!list.length) {
-    container.innerHTML = '<div style="color:#6b7280;text-align:center;padding:20px;font-size:0.72rem">尚無標記</div>';
+    container.innerHTML = '<div style="color:var(--c-6b7280);text-align:center;padding:20px;font-size:0.72rem">尚無標記</div>';
     return;
   }
   list.forEach(entry => {
     const row = document.createElement('div');
-    row.style.cssText = 'padding:7px 10px;cursor:pointer;font-size:0.68rem;border-bottom:1px solid #eef0f3;display:flex;align-items:center;gap:6px';
+    row.style.cssText = 'padding:7px 10px;cursor:pointer;font-size:0.68rem;border-bottom:1px solid var(--c-eef0f3);display:flex;align-items:center;gap:6px';
     const emoji = MARKER_ICONS[entry.type] || '📍';
     const lat = entry.marker.getLatLng().lat.toFixed(4);
     const lng = entry.marker.getLatLng().lng.toFixed(4);
@@ -3326,7 +3416,7 @@ function renderMarkersList(filter) {
     nameSpan.textContent = emoji + ' ' + entry.name;
 
     const coordSpan = document.createElement('span');
-    coordSpan.style.cssText = 'color:#9ca3af;font-size:0.6rem;flex-shrink:0';
+    coordSpan.style.cssText = 'color:var(--c-9ca3af);font-size:0.6rem;flex-shrink:0';
     coordSpan.textContent = lat + ',' + lng;
 
     const delBtn = document.createElement('button');
@@ -3342,7 +3432,7 @@ function renderMarkersList(filter) {
 
     row.append(nameSpan, coordSpan, delBtn);
     row.onclick = () => { closeMarkersModal(); flyToSpot(entry.marker.getLatLng().lat, entry.marker.getLatLng().lng, entry.name, entry.type); };
-    row.onmouseover = () => row.style.background = '#eef4ff';
+    row.onmouseover = () => row.style.background = 'var(--c-eef4ff)';
     row.onmouseout  = () => row.style.background = '';
     container.appendChild(row);
   });
@@ -3363,7 +3453,7 @@ async function openSpotsModal() {
   document.getElementById('spots-overlay').style.display='block';
   document.getElementById('spots-modal').style.display='flex';
   if (!spotsData) {
-    document.getElementById('spots-list').innerHTML='<div style="color:#6b7280;text-align:center;padding:20px;font-size:0.72rem">載入中…</div>';
+    document.getElementById('spots-list').innerHTML='<div style="color:var(--c-6b7280);text-align:center;padding:20px;font-size:0.72rem">載入中…</div>';
     try {
       spotsData = await (await fetch('/static/pikmin_spots.json')).json();
     } catch {
@@ -3392,21 +3482,21 @@ function renderSpotsList(filter) {
     const spots = spotsData[cat.key] || [];
     if (!spots.length) return;
     const hdr = document.createElement('div');
-    hdr.style.cssText = 'color:#15803d;font-size:0.65rem;font-weight:bold;padding:5px 10px 3px;position:sticky;top:0;background:#ffffff;border-bottom:1px solid #e2e6ec;';
+    hdr.style.cssText = 'color:var(--c-15803d);font-size:0.65rem;font-weight:bold;padding:5px 10px 3px;position:sticky;top:0;background:var(--c-ffffff);border-bottom:1px solid var(--c-e2e6ec);';
     hdr.textContent = cat.label + `（${spots.length}）`;
     container.appendChild(hdr);
     spots.forEach(p => {
       const row = document.createElement('div');
-      row.style.cssText = 'padding:6px 10px;cursor:pointer;font-size:0.68rem;border-bottom:1px solid #eef0f3;display:flex;justify-content:space-between;align-items:center;';
-      row.innerHTML = `<span>${p.name}</span><span style="color:#9ca3af;font-size:0.6rem">${p.lat.toFixed(3)},${p.lng.toFixed(3)}</span>`;
-      row.onmouseover = () => row.style.background='#eef4ff';
+      row.style.cssText = 'padding:6px 10px;cursor:pointer;font-size:0.68rem;border-bottom:1px solid var(--c-eef0f3);display:flex;justify-content:space-between;align-items:center;';
+      row.innerHTML = `<span>${p.name}</span><span style="color:var(--c-9ca3af);font-size:0.6rem">${p.lat.toFixed(3)},${p.lng.toFixed(3)}</span>`;
+      row.onmouseover = () => row.style.background='var(--c-eef4ff)';
       row.onmouseout  = () => row.style.background='';
       row.onclick = () => { closeSpotsModal(); flyToSpot(p.lat, p.lng, p.name, cat.type); };
       container.appendChild(row);
       count++;
     });
   });
-  if (!count) container.innerHTML='<div style="color:#6b7280;text-align:center;padding:20px;font-size:0.72rem">無資料</div>';
+  if (!count) container.innerHTML='<div style="color:var(--c-6b7280);text-align:center;padding:20px;font-size:0.72rem">無資料</div>';
 }
 
 function loadAllSpotsAsMarkers() {
@@ -3480,14 +3570,14 @@ function showMapOverlay(url) {
   if (mapImageOverlay) map.removeLayer(mapImageOverlay);
   mapImageOverlay = L.imageOverlay(url, [[nLat, wLng], [sLat, eLng]], {opacity:0.7, interactive:false}).addTo(map);
   const cIcon = L.divIcon({className:'', html:'<div class="overlay-corner"></div>', iconAnchor:[13,13]});
-  const pIcon = L.divIcon({className:'', html:'<div style="width:22px;height:22px;background:#f0c040;border:2px solid #fff;border-radius:50%;cursor:move;display:flex;align-items:center;justify-content:center;font-size:13px;line-height:1">✛</div>', iconAnchor:[11,11]});
+  const pIcon = L.divIcon({className:'', html:'<div style="width:22px;height:22px;background:#f0c040;border:2px solid var(--c-fff);border-radius:50%;cursor:move;display:flex;align-items:center;justify-content:center;font-size:13px;line-height:1">✛</div>', iconAnchor:[11,11]});
   if (overlayNWMarker) map.removeLayer(overlayNWMarker);
   if (overlaySEMarker) map.removeLayer(overlaySEMarker);
   if (overlayCenterMarker) map.removeLayer(overlayCenterMarker);
   overlayNWMarker = L.marker([nLat, wLng], {draggable:true, icon:cIcon, zIndexOffset:1000}).addTo(map);
   overlaySEMarker = L.marker([sLat, eLng], {draggable:true, icon:cIcon, zIndexOffset:1000}).addTo(map);
   overlayCenterMarker = L.marker([sLat, (wLng+eLng)/2], {draggable:true, icon:pIcon, zIndexOffset:1001}).addTo(map);
-  const rIcon = L.divIcon({className:'', html:'<div style="width:28px;height:28px;background:#e06060;border:2px solid #fff;border-radius:50%;cursor:grab;display:flex;align-items:center;justify-content:center;font-size:16px;line-height:1">↻</div>', iconAnchor:[14,14]});
+  const rIcon = L.divIcon({className:'', html:'<div style="width:28px;height:28px;background:#e06060;border:2px solid var(--c-fff);border-radius:50%;cursor:grab;display:flex;align-items:center;justify-content:center;font-size:16px;line-height:1">↻</div>', iconAnchor:[14,14]});
   if (overlayRotateHandle) map.removeLayer(overlayRotateHandle);
   overlayRotateHandle = L.marker([(nLat+sLat)/2, eLng], {draggable:true, icon:rIcon, zIndexOffset:1002}).addTo(map);
   overlayNWMarker.on('drag', _resizeFromCorners);
@@ -3626,14 +3716,14 @@ function removeMapOverlay() {
      style="display:none;position:fixed;inset:0;background:#0007;z-index:9998"></div>
 <div id="pickmarkers-modal"
      style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
-            background:#ffffff;border:1px solid #d8dee6;border-radius:10px;padding:14px;
+            background:var(--c-ffffff);border:1px solid var(--c-d8dee6);border-radius:10px;padding:14px;
             z-index:9999;width:320px;max-height:80vh;box-shadow:0 8px 24px #000c;
             flex-direction:column;gap:8px">
   <div style="display:flex;align-items:center;justify-content:space-between">
-    <span style="color:#15803d;font-weight:bold;font-size:0.8rem">📌 選擇尋菇點</span>
-    <button onclick="closePickMarkersModal()" style="background:none;border:none;color:#6b7280;cursor:pointer;font-size:1rem">✕</button>
+    <span style="color:var(--c-15803d);font-weight:bold;font-size:0.8rem">📌 選擇尋菇點</span>
+    <button onclick="closePickMarkersModal()" style="background:none;border:none;color:var(--c-6b7280);cursor:pointer;font-size:1rem">✕</button>
   </div>
-  <div style="font-size:0.62rem;color:#6b7280">勾選要加入巡邏的標記，按確定後加為中繼點</div>
+  <div style="font-size:0.62rem;color:var(--c-6b7280)">勾選要加入巡邏的標記，按確定後加為中繼點</div>
   <div style="display:flex;gap:4px;flex-wrap:wrap">
     <button class="sf-btn sf-active" id="pm-all"     onclick="renderPickList('all')">全部</button>
     <button class="sf-btn" id="pm-mushroom" onclick="renderPickList('mushroom')">🍄 蘑菇</button>
@@ -3642,14 +3732,14 @@ function removeMapOverlay() {
     <button class="sf-btn" id="pm-pin"      onclick="renderPickList('pin')">📍 標記</button>
     <button class="sf-btn" id="pm-sort-btn" onclick="togglePmSort()">📏 距離</button>
   </div>
-  <div id="pm-list" style="overflow-y:auto;max-height:300px;border:1px solid #e2e6ec;border-radius:6px;background:#f7f8fa"></div>
+  <div id="pm-list" style="overflow-y:auto;max-height:300px;border:1px solid var(--c-e2e6ec);border-radius:6px;background:var(--c-f7f8fa)"></div>
   <div style="display:flex;gap:6px">
     <button onclick="confirmPickMarkers()"
             style="flex:1;background:#7ee8a2;color:#1a1a2e;border:none;border-radius:5px;padding:6px;cursor:pointer;font-size:0.65rem;font-weight:bold">
       ✓ 加為中繼點
     </button>
     <button onclick="closePickMarkersModal()"
-            style="flex:1;background:#e5e8ee;color:#374151;border:none;border-radius:5px;padding:6px;cursor:pointer;font-size:0.65rem">
+            style="flex:1;background:var(--c-e5e8ee);color:var(--c-374151);border:none;border-radius:5px;padding:6px;cursor:pointer;font-size:0.65rem">
       取消
     </button>
   </div>
@@ -3660,12 +3750,12 @@ function removeMapOverlay() {
      style="display:none;position:fixed;inset:0;background:#0007;z-index:9998"></div>
 <div id="mymarkers-modal"
      style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
-            background:#ffffff;border:1px solid #d8dee6;border-radius:10px;padding:14px;
+            background:var(--c-ffffff);border:1px solid var(--c-d8dee6);border-radius:10px;padding:14px;
             z-index:9999;width:320px;max-height:80vh;box-shadow:0 8px 24px #000c;
             flex-direction:column;gap:8px">
   <div style="display:flex;align-items:center;justify-content:space-between">
-    <span style="color:#15803d;font-weight:bold;font-size:0.8rem">📋 我的標記</span>
-    <button onclick="closeMarkersModal()" style="background:none;border:none;color:#6b7280;cursor:pointer;font-size:1rem;line-height:1">✕</button>
+    <span style="color:var(--c-15803d);font-weight:bold;font-size:0.8rem">📋 我的標記</span>
+    <button onclick="closeMarkersModal()" style="background:none;border:none;color:var(--c-6b7280);cursor:pointer;font-size:1rem;line-height:1">✕</button>
   </div>
   <div style="display:flex;gap:4px;flex-wrap:wrap">
     <button id="mm-all"      class="sf-btn sf-active" onclick="renderMarkersList('all')">全部</button>
@@ -3674,9 +3764,9 @@ function removeMapOverlay() {
     <button id="mm-special"  class="sf-btn" onclick="renderMarkersList('special')">⭐ 明信片</button>
     <button id="mm-pin"      class="sf-btn" onclick="renderMarkersList('pin')">📍 標記</button>
   </div>
-  <div id="mm-list" style="overflow-y:auto;max-height:360px;border:1px solid #e2e6ec;border-radius:6px;background:#f7f8fa"></div>
+  <div id="mm-list" style="overflow-y:auto;max-height:360px;border:1px solid var(--c-e2e6ec);border-radius:6px;background:var(--c-f7f8fa)"></div>
   <button onclick="closeMarkersModal()"
-          style="background:#e5e8ee;color:#374151;border:none;border-radius:5px;padding:6px;cursor:pointer;font-size:0.65rem;width:100%">
+          style="background:var(--c-e5e8ee);color:var(--c-374151);border:none;border-radius:5px;padding:6px;cursor:pointer;font-size:0.65rem;width:100%">
     關閉
   </button>
 </div>
@@ -3686,12 +3776,12 @@ function removeMapOverlay() {
      style="display:none;position:fixed;inset:0;background:#0007;z-index:9998"></div>
 <div id="spots-modal"
      style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
-            background:#ffffff;border:1px solid #d8dee6;border-radius:10px;padding:14px;
+            background:var(--c-ffffff);border:1px solid var(--c-d8dee6);border-radius:10px;padding:14px;
             z-index:9999;width:320px;max-height:80vh;box-shadow:0 8px 24px #000c;
             flex-direction:column;gap:8px">
   <div style="display:flex;align-items:center;justify-content:space-between">
-    <span style="color:#15803d;font-weight:bold;font-size:0.8rem">🗺️ 遊戲熱點</span>
-    <button onclick="closeSpotsModal()" style="background:none;border:none;color:#6b7280;cursor:pointer;font-size:1rem;line-height:1">✕</button>
+    <span style="color:var(--c-15803d);font-weight:bold;font-size:0.8rem">🗺️ 遊戲熱點</span>
+    <button onclick="closeSpotsModal()" style="background:none;border:none;color:var(--c-6b7280);cursor:pointer;font-size:1rem;line-height:1">✕</button>
   </div>
   <div style="display:flex;gap:4px;flex-wrap:wrap">
     <button id="sf-all"        class="sf-btn sf-active" onclick="renderSpotsList('all')">全部</button>
@@ -3700,14 +3790,14 @@ function removeMapOverlay() {
     <button id="sf-postcards"  class="sf-btn" onclick="renderSpotsList('postcards')">⭐ 明信片</button>
     <button id="sf-taiwan_poi" class="sf-btn" onclick="renderSpotsList('taiwan_poi')">📍 台灣</button>
   </div>
-  <div id="spots-list" style="overflow-y:auto;max-height:340px;border:1px solid #e2e6ec;border-radius:6px;background:#f7f8fa"></div>
-  <div style="display:flex;gap:6px;padding-top:4px;border-top:1px solid #e2e6ec">
+  <div id="spots-list" style="overflow-y:auto;max-height:340px;border:1px solid var(--c-e2e6ec);border-radius:6px;background:var(--c-f7f8fa)"></div>
+  <div style="display:flex;gap:6px;padding-top:4px;border-top:1px solid var(--c-e2e6ec)">
     <button onclick="loadAllSpotsAsMarkers()"
             style="flex:1;background:#e879a0;color:#fff;border:none;border-radius:5px;padding:6px;cursor:pointer;font-size:0.65rem;font-weight:bold">
       📌 全部載入為標記
     </button>
     <button onclick="closeSpotsModal()"
-            style="flex:1;background:#e5e8ee;color:#374151;border:none;border-radius:5px;padding:6px;cursor:pointer;font-size:0.65rem">
+            style="flex:1;background:var(--c-e5e8ee);color:var(--c-374151);border:none;border-radius:5px;padding:6px;cursor:pointer;font-size:0.65rem">
       關閉
     </button>
   </div>
@@ -3752,12 +3842,21 @@ function removeMapOverlay() {
         <button class="hs-btn" onclick="toggleHs('h0','ha0')">🚀 快速上手 <span id="ha0">▸</span></button>
         <div class="hs-body open" id="h0">
           <ul>
-            <li>iPhone USB 接皮皮盒 → 連上 WiFi → 開啟 <b>http://192.168.4.1:5000</b> → 點 <b>🔌 連線手機</b></li>
+            <li>iPhone USB 接皮皮盒 → 連上 WiFi → 開啟 <b>http://192.168.4.1:5000</b> → 點畫面上方的 <b>🔌 連線手機</b></li>
             <li>在地圖上依序點選路線中繼點（至少 2 點）</li>
             <li>點 <b>▶ 開始</b>，🌱 標記開始沿路線移動</li>
             <li>點 <b>⏹ 停止</b> 隨時中斷</li>
           </ul>
           <div class="tip">連線時 iPhone 螢幕必須亮著（解鎖狀態），建立 tunnel 約需 5–35 秒</div>
+          <table>
+            <tr><td>畫面位置</td><td>內容</td></tr>
+            <tr><td>上方常駐區<br>（切換分頁也不會消失）</td><td>🔌 連線手機、🌙 掛機模式、▶ 開始／⏹ 停止／⏸ 臨停、↩ 上一點、🗑 清除</td></tr>
+            <tr><td>🚗 移動</td><td>速度、折返／直線／跟隨、尋菇／瞬間移動／繞圈種花、搜尋地點</td></tr>
+            <tr><td>📍 標記</td><td>新增標記（🍄🌸⭐📍）、我的標記、路線管理（儲存／載入／匯出入／GPX／熱點）</td></tr>
+            <tr><td>🕹️ 搖桿</td><td>實體搖桿模式、粗調／微調、跳距</td></tr>
+            <tr><td>🗾 疊圖</td><td>遊戲截圖疊圖對位</td></tr>
+            <tr><td>🔄 更新</td><td>檢查並更新軟體版本</td></tr>
+          </table>
         </div>
       </div>
 
@@ -3766,6 +3865,7 @@ function removeMapOverlay() {
         <div class="hs-body" id="h1">
           <ul>
             <li><b>速度滑桿</b>：3–25 km/h，每步自動 ±15% 隨機化，並加入隨機停頓，模擬真人步伐</li>
+            <li><b>🌙 / ☀️ 主題</b>：標題列右上角的按鈕可切換<b>深色／淺色</b>介面（地圖也會一併調暗），會記住你的選擇；晚上使用建議切深色</li>
             <li><b>跟隨</b>：地圖自動跟著目前位置移動（可關閉手動拖地圖）</li>
             <li><b>↩ 上一點</b>：刪除最後一個中繼點並重算路線</li>
             <li><b>🗑 清除</b>：清除所有中繼點與路線</li>
@@ -3779,7 +3879,7 @@ function removeMapOverlay() {
         <button class="hs-btn" onclick="toggleHs('h14','ha14')">⏸ 臨停 GPS <span id="ha14">▸</span></button>
         <div class="hs-body" id="h14">
           <ul>
-            <li>模擬進行中會出現橘色「<b>⏸ 臨停GPS</b>」按鈕（與 ⏹ 停止並排），任何模式皆可用</li>
+            <li>模擬進行中會出現橘色「<b>⏸ 臨停GPS</b>」按鈕（在 ▶ 開始／⏹ 停止 的下方），任何模式皆可用</li>
             <li>按下後：<b>停止自動走路，但 GPS 凍結在當前位置</b>——不清除定位，iPhone 不會跳回真實位置</li>
             <li>用途：路上發現附近有菇 / 花 → 按臨停 → 在地圖點該位置<b>加中繼點</b> → 按 ▶ 開始 → 走過去採集</li>
             <li>採完後按 <b>⏹ 停止</b>（正常停止）才會清除模擬定位、讓 iPhone 回到真實 GPS</li>
@@ -3853,10 +3953,13 @@ function removeMapOverlay() {
         <button class="hs-btn" onclick="toggleHs('h6','ha6')">📍 地圖標記 <span id="ha6">▸</span></button>
         <div class="hs-body" id="h6">
           <ul>
-            <li>點 🍄🌸⭐📍 其中一個按鈕進入標記模式，再點地圖選位置並輸入名稱</li>
-            <li>再次點同一個按鈕，或按 Esc 退出標記模式</li>
+            <li><b>新增標記</b>在「<b>📍 標記</b>」分頁最上面：🍄蘑菇 🌸大花 ⭐明信片 📍標記 四顆按鈕（附文字），下方有「<b>標記名稱</b>」輸入框</li>
+            <li>步驟：① 點其中一顆選類型（變橘框＝標記模式）→ ② 在「標記名稱」輸入名稱（可省略，空白會用類型名稱）→ ③ 點地圖上要放的位置，標記立即放下</li>
+            <li>可連續放多個：每放一個，名稱框會清空，輸入下一個名稱再點地圖即可</li>
+            <li>再次點同一顆按鈕即可結束標記模式；開始模擬時會自動結束</li>
+            <li><b>改名 / 刪除</b>：點地圖上已放的標記，跳出的小視窗可修改名稱（💾 改名）或刪除（🗑 刪除）</li>
             <li>標記儲存在伺服器（<code>static/markers.json</code>），換裝置也看得到</li>
-            <li>點「<b>📋 我的標記</b>」開啟清單，可按類型篩選、點擊定位、刪除標記</li>
+            <li>「<b>📋 我的標記</b>」是<b>清單管理</b>（按類型篩選、點擊定位、刪除），<b>不能在這裡新增</b>；要新增請回上面那一排按鈕</li>
           </ul>
           <table>
             <tr><td>圖示</td><td>用途</td></tr>
@@ -3873,7 +3976,7 @@ function removeMapOverlay() {
         <div class="hs-body" id="h13">
           <ul>
             <li>把遊戲截圖疊在地圖上，協助對準 GPS 位置（標點或設路線用）</li>
-            <li>先把地圖移到截圖對應的區域，展開側欄「🗾 疊圖輔助」→ 點「📸 上傳遊戲截圖」</li>
+            <li>先把地圖移到截圖對應的區域，切到「🗾 疊圖」分頁 → 點「📸 上傳遊戲截圖」</li>
             <li>截圖出現後，拖曳地圖上的三個把手調整位置：</li>
           </ul>
           <table>
@@ -3895,6 +3998,7 @@ function removeMapOverlay() {
         <button class="hs-btn" onclick="toggleHs('h7','ha7')">📁 路線管理 <span id="ha7">▸</span></button>
         <div class="hs-body" id="h7">
           <ul>
+            <li>路線管理在「<b>📍 標記</b>」分頁的下半部</li>
             <li><b>儲存</b>：輸入路線名稱 → 💾 儲存（含中繼點 + 完整路線座標）</li>
             <li><b>載入</b>：下拉選擇路線 → 📂 載入，自動還原地圖路線</li>
             <li><b>熱點</b>：🗺️ 熱點，開啟 pogoskill 台灣蘑菇/大花/明信片/POI 清單，點擊定位或載入為標記</li>
@@ -3913,7 +4017,7 @@ function removeMapOverlay() {
         <button class="hs-btn" onclick="toggleHs('h9','ha9')">🌙 掛機模式 <span id="ha9">▸</span></button>
         <div class="hs-body" id="h9">
           <ul>
-            <li>開啟後按鈕變紫色，進入掛機狀態</li>
+            <li>按鈕在畫面上方常駐區（🔌 連線手機旁）；開啟後按鈕變紫色，進入掛機狀態</li>
             <li>若偵測到手機斷線，自動重新連線並重啟模擬</li>
             <li>支援所有模式：行走、尋菇、瞬間移動、繞圈種花</li>
             <li>適合放著跑一整晚、不需守著螢幕</li>
@@ -3927,7 +4031,7 @@ function removeMapOverlay() {
         <div class="hs-body" id="h12">
           <ul>
             <li>搖桿開機後會自動連上皮皮盒，● 指示燈變綠表示已連線</li>
-            <li>按「🕹️ 搖桿 ●」按鈕進入搖桿模式</li>
+            <li>到「🕹️ 搖桿」分頁，按「🕹️ 搖桿 ●」按鈕進入搖桿模式</li>
             <li><b>粗調</b>：撥一下立即跳躍固定距離（不管搖桿停留多久），可選 50 / 100 / 200 / 500 m</li>
             <li><b>微調</b>：持續按住方向，按照速度滑桿設定的速度連續移動</li>
             <li>按 <b>[粗調] / [微調]</b> 切換模式；粗調模式下可再選跳距</li>
@@ -3941,10 +4045,35 @@ function removeMapOverlay() {
         <div class="hs-body" id="h10">
           <ul>
             <li><b>搜尋框</b>：輸入中文地址或地名 → 按搜尋 → 點結果飛到該地</li>
-            <li><b>GPS 跳轉框</b>（地圖左下角）：輸入「緯度,經度」或按 Enter 直接飛到座標</li>
+            <li><b>GPS 跳轉框</b>（地圖左下角）：輸入「緯度,經度」或按 Enter 直接飛到座標；輸入框右側的 <b>✕</b> 可一鍵清除，點進輸入框也會自動全選，直接貼上新座標即可取代舊的</li>
             <li>飛到後地圖顯示<b>紅色十字準星</b>，可點 popup「加為中繼點」或「移除」</li>
           </ul>
           <div class="tip">座標格式範例：<code>25.0478,121.5319</code>（台北 101）</div>
+        </div>
+      </div>
+
+      <div class="hs">
+        <button class="hs-btn" onclick="toggleHs('h15','ha15')">🔄 軟體更新 <span id="ha15">▸</span></button>
+        <div class="hs-body" id="h15">
+          <ul>
+            <li>到「<b>🔄 更新</b>」分頁 → 按「🔍 檢查更新」→ 有新版本時按「⬆ 立即更新」</li>
+            <li>版本號顯示在標題「GPsikmin」旁邊的小字</li>
+            <li><b>需要網路</b>：盒子要能上網（例如 iPhone 開「個人熱點」並用 USB 接著），或手機開著<b>行動數據</b>（手機連盒子 WiFi 時，由手機幫忙下載更新再傳給盒子）</li>
+            <li>更新前請先 <b>⏹ 停止</b> 模擬；模擬進行中無法更新</li>
+            <li>更新完成後約 3 秒自動重啟，頁面會自動重新整理；若版本仍是舊的，請把盒子<b>拔電再插電</b>一次</li>
+            <li>更新包有數位簽章，盒子會自己驗證，不是官方發布的檔案一律拒絕</li>
+          </ul>
+          <div class="tip">更新途中請勿拔電。若出現「寫入失敗」等錯誤訊息，請截圖回報</div>
+        </div>
+      </div>
+
+      <div class="hs">
+        <button class="hs-btn" onclick="toggleHs('h16','ha16')">🔋 電量顯示（自帶電源版） <span id="ha16">▸</span></button>
+        <div class="hs-body" id="h16">
+          <ul>
+            <li>只有加裝電池模組的盒子，標題列右側才會出現電量徽章；一般盒子看不到，屬正常</li>
+            <li>⚡ 表示充電中，🔋 表示使用電池中</li>
+          </ul>
         </div>
       </div>
 
@@ -3973,7 +4102,7 @@ function removeMapOverlay() {
   background:rgba(0,0,0,0.9);z-index:9999;align-items:center;justify-content:center;flex-direction:column;gap:14px">
   <div style="font-size:4rem">🪣</div>
   <div id="goldpot-title" style="font-size:1.8rem;color:#FFD700;font-weight:bold;text-align:center;padding:0 20px">凍結GPS中，準備互動</div>
-  <div id="goldpot-sub" style="color:#6b7280;font-size:0.95rem;text-align:center;padding:0 20px">切換到 Pikmin Bloom，倒數結束後立刻互動金盆</div>
+  <div id="goldpot-sub" style="color:var(--c-6b7280);font-size:0.95rem;text-align:center;padding:0 20px">切換到 Pikmin Bloom，倒數結束後立刻互動金盆</div>
   <div id="goldpot-timer" style="font-size:4rem;color:#fff;font-weight:bold;min-width:60px;text-align:center"></div>
   <button onclick="document.getElementById('goldpot-overlay').style.display='none'"
     style="padding:10px 28px;font-size:1rem;background:#555;color:#fff;border:none;border-radius:8px;cursor:pointer;margin-top:8px">
