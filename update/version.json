@@ -1,7 +1,7 @@
 {
-  "version": "1.5.10",
+  "version": "1.5.11",
   "url": "https://gpsikmin2026.github.io/update/pikmin_web.py",
-  "sha256": "a32b5dfa3e38ce0c77dbf56b3ce25c181201ec19343913e5b9bc302b4f1f43c1",
-  "sig": "/ZxGXdDA9szs2UFlmhwWSs5gTdhI3bq321YgLhYbix4O28GRe+S9yt1aztlLm6GafROs65gnMbLVF0/0JB6ZCA==",
-  "changelog": "v1.5.10：更新機制大改——盒子沒有網路時，改由手機瀏覽器（行動網路）下載更新包再傳給盒子，並以 ed25519 簽章離線驗證，遠端更新終於可用。"
+  "sha256": "46c465fe366d3d559308c2d1f7fad7929671750d074e656809417c0612d65e2d",
+  "sig": "j9Vg1zCTPCmhT11FxtcC61V1RjYE3czgEBMc/PgrdscIvp4pEwkmu/9kfp5lwBVymlryIK3awpmZSs0bCCOSCw==",
+  "changelog": "v1.5.11：測試版——驗證手機中繼更新流程，功能無變動。"
 }
