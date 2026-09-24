@@ -1,7 +1,7 @@
 {
-  "version": "1.5.12",
+  "version": "1.5.14",
   "url": "https://gpsikmin2026.github.io/update/pikmin_web.py",
-  "sha256": "6f2a38a785d291302eafa24d194974a09b1247949efcbc8c083628b409c9eeda",
-  "sig": "J1qWWKjwTfWBU8MLqsn8c51Yh+cqCCPD3Zo3YSdjGlAclLB3XPl9+dXIPk42lSAeg0aymn55kidIqrNUv14mBA==",
-  "changelog": "v1.5.12：修正更新完成後不會自動重啟的問題（更新後版本仍顯示舊版）。"
+  "sha256": "5f7f477b82ebb75048f6877dfff87b359aaadf72f73fa046c9af9f906c0f3af3",
+  "sig": "Rn34y/mvnOG8vkz9OXRcPCaFBNQdyyGBG7PJibQnNrXKR9/ltqCdAtYd1XcTOBK9QlrH3EJnCDcY+bz/z9BWDA==",
+  "changelog": "v1.5.14：修正更新機制——開機後第一次更新會失敗的問題，以及更新後不自動重啟的問題。"
 }
