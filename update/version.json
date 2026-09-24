@@ -1,7 +1,7 @@
 {
-  "version": "1.5.20",
+  "version": "1.5.21",
   "url": "https://gpsikmin2026.github.io/update/pikmin_web.py",
-  "sha256": "cb45372af7c48dec6dc5081f7a547939f1ccc04c299972558b5b68c95454014a",
-  "sig": "umGHdiy0jA9P+aQFlCGHhS+CIUMzryPc2M6B9lWRkz+IrxYDc0/YM9Y7eRO5583pbf5nhGayiGGAihNpL/nsBg==",
-  "changelog": "v1.5.20：介面版面優化第二批——移動分頁改為模式單選列與藥丸開關；地點搜尋與座標跳轉合併成地圖左下單一輸入框；手機執行中自動收合設定區、地圖更大（標題列 ⚙️ 設定可展開）；修正側欄高度變動時地圖尺寸未更新的問題。"
+  "sha256": "aa6b7309c3a58290ddde26269e0eac8bcb84de1bcba27083c555f4929fc0e15d",
+  "sig": "GiriCpZAjMxaNg2vDQ1xpaAkiF/YKl6l6/JQ3shFZvrvwmRXVph23i/puY3RA/yPYpvRKYdjvzKP/b8acvDVAg==",
+  "changelog": "修正手機版標記/路線/更多分頁內容過長時無法上下捲動"
 }
