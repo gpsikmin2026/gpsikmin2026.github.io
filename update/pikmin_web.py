@@ -3,7 +3,7 @@
 GPsikmin Web UI
 執行：python3 pikmin_web.py
 """
-VERSION = "1.5.10"
+VERSION = "1.5.11"
 
 import asyncio
 import fcntl
