@@ -3,7 +3,7 @@
 GPsikmin Web UI
 執行：python3 pikmin_web.py
 """
-VERSION = "1.5.14"
+VERSION = "1.5.15"
 
 import asyncio
 import fcntl
@@ -1476,6 +1476,7 @@ input[type=range] { width: 80px; accent-color: #15803d; }
 #speed-val { color: #15803d; font-weight: bold; min-width: 42px; }
 input[type=checkbox] { accent-color: #15803d; width: 15px; height: 15px; }
 .btn { padding: 4px 8px; border: none; border-radius: 6px; cursor: pointer; font-size: 0.64rem; font-weight: bold; white-space: nowrap; touch-action: manipulation; background:#eef1f4; color:#374151; }
+#btn-afk { background: #eef1f4; color: #374151; }
 #btn-afk.afk-on { background: #7b5ea7; color: #fff; }
 .marker-type-row { display:flex; gap:4px; width:100%; }
 .btn-mtype { flex:1; background:#eef1f4; color:#4b5563; border:none; border-radius:6px; padding:4px 2px; font-size:1rem; cursor:pointer; border:2px solid transparent; transition:border-color 0.1s; }
@@ -1659,6 +1660,10 @@ input[type=time] { background: #f5f7f9; border: 1px solid #d8dee6; color: #1f243
   </div>
 
   <div id="pinned-actions">
+    <div class="mini-row">
+      <button class="big-btn" id="btn-connect" onclick="connectPhone()" style="background:#eef1f4;color:#374151" title="連線 iPhone">🔌 連線手機</button>
+      <button class="big-btn" id="btn-afk" onclick="toggleAfkMode()" title="掛機：斷線自動重連並重啟">🌙 掛機模式</button>
+    </div>
     <button class="big-btn" id="btn-start" onclick="startSim()" disabled>▶ 開始</button>
     <button class="big-btn" id="btn-stop" onclick="stopSim()" style="display:none">⏹ 停止</button>
     <button class="big-btn" id="btn-hold-stop" onclick="holdStopSim()" style="display:none" title="凍結GPS在當前位置（不清除定位），方便走向目標後繼續">⏸ 臨停GPS</button>
@@ -1802,8 +1807,6 @@ input[type=time] { background: #f5f7f9; border: 1px solid #d8dee6; color: #1f243
     </div>
 
     <div class="tab-panel" id="tab-remote">
-      <button class="btn" id="btn-connect" onclick="connectPhone()" style="background:#eef1f4;color:#374151;width:100%" title="連線 iPhone">🔌 連線手機</button>
-      <button class="btn" id="btn-afk" onclick="toggleAfkMode()" style="background:#eef1f4;color:#374151;width:100%" title="掛機：斷線自動重連並重啟">🌙 掛機模式</button>
       <button class="btn" id="btn-joystick" onclick="toggleJoystick()" style="background:#eef1f4;color:#374151;width:100%" title="實體搖桿模式">🕹️ 搖桿 <span id="ble-dot" style="color:#9ca3af" title="搖桿未連線">●</span></button>
       <div style="display:flex;gap:4px;margin-top:4px">
         <button id="btn-mode-coarse" onclick="setJoyMode('coarse')"
