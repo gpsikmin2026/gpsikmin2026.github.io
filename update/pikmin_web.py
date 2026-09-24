@@ -3,7 +3,7 @@
 GPsikmin Web UI
 執行：python3 pikmin_web.py
 """
-VERSION = "1.5.15"
+VERSION = "1.5.16"
 
 import asyncio
 import fcntl
@@ -3437,10 +3437,6 @@ restoreRouteState();
     }
   } catch {}
 })();
-if (window.innerWidth<=640) {
-  document.getElementById('route-content').classList.add('collapsed');
-  document.getElementById('route-arrow').textContent='▸';
-}
 
 function toggleSidebar() {
   const sb = document.getElementById('sidebar');

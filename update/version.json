@@ -1,7 +1,7 @@
 {
-  "version": "1.5.15",
+  "version": "1.5.16",
   "url": "https://gpsikmin2026.github.io/update/pikmin_web.py",
-  "sha256": "2e0439da077e514371357fcf21d1754131aa56dcfca22a1a12885f40e1a9af1a",
-  "sig": "NYdRy1C+kOrrHCggqryCY465DpyEXnp4zhlWQLBuq09JRrkOQIR3DcVMO96AecXOZlUurBFTRwRq9PyfiT2PAA==",
-  "changelog": "v1.5.15：「連線手機」與「掛機模式」移到畫面上方常駐區，切換任何分頁都看得到；修正掛機模式開啟後按鈕沒變紫色的問題。"
+  "sha256": "714233ecc236271cd422085da6de6323b58aa407e814c84ee52898165b545019",
+  "sig": "XgRtDtGdL8o3bUyk9btsjQE2m+tx1KMgGAmwe6KAm1iX2T7LBdtC072CjztyIoCr/nRkUKJu2m5LsFHAecbYCA==",
+  "changelog": "v1.5.16：修正手機上點地圖無法規劃路徑的問題（v1.5.6 起的錯誤）。"
 }
