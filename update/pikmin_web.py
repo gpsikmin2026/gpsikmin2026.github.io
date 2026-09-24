@@ -3,9 +3,10 @@
 GPsikmin Web UI
 執行：python3 pikmin_web.py
 """
-VERSION = "1.5.5"
+VERSION = "1.5.10"
 
 import asyncio
+import fcntl
 import hashlib
 import json
 import math
@@ -809,6 +810,76 @@ def api_hold_stop():
 def _is_overlayroot():
     return os.path.isdir("/media/root-ro") and os.path.ismount("/media/root-ro")
 
+# 更新包簽章公鑰（ed25519）。私鑰只在開發機（~/.gpsikmin_ota_signing_key），盒子端只能驗章、不能簽章。
+_OTA_PUBKEY_B64 = "UDDTAANNUY+mMbzK1HSAE7EjDPuoTIcY/vQPm7w3l+M="
+
+
+def _ver_tuple(v):
+    try:
+        return tuple(int(x) for x in str(v).strip().split("."))
+    except ValueError:
+        return (0,)
+
+
+def _ota_verify(code, version, sha256_hex, sig_b64):
+    """驗證更新包。通過回 None，否則回錯誤訊息。
+    盒子自己是 AP、沒有上游網路，更新包可能是手機瀏覽器中繼上傳的（不可信來源），
+    所以必須離線驗 ed25519 簽章＋防降版＋語法檢查，不能只靠 sha256。"""
+    import base64, re
+    from cryptography.exceptions import InvalidSignature
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+    if not (version and sha256_hex and sig_b64):
+        return "更新資訊缺少版本/雜湊/簽章"
+    if hashlib.sha256(code).hexdigest() != sha256_hex:
+        return "檔案驗證失敗（hash 不符）"
+    try:
+        Ed25519PublicKey.from_public_bytes(base64.b64decode(_OTA_PUBKEY_B64)).verify(
+            base64.b64decode(sig_b64), f"gpsikmin-ota\n{version}\n{sha256_hex}".encode())
+    except (InvalidSignature, ValueError):
+        return "簽章驗證失敗（更新包不是官方發布）"
+    m = re.search(rb'^VERSION = "([^"]+)"', code, re.M)
+    if not m or m.group(1).decode() != version:
+        return "更新包內部版本號與宣告不符"
+    if _ver_tuple(version) <= _ver_tuple(VERSION):
+        return f"已是最新版本（目前 v{VERSION}，更新包 v{version}）"
+    try:
+        compile(code, "ota_payload", "exec")
+    except SyntaxError as e:
+        return f"更新包語法錯誤：{e}"
+    return None
+
+
+def _ota_install(code):
+    """把已驗證的程式碼寫進 overlay + root-ro（或一般系統），並排程重啟。"""
+    tmp_path = "/tmp/_gpsikmin_ota.py"
+    with open(tmp_path, "wb") as f:
+        f.write(code)
+
+    if _is_overlayroot():
+        real_path = _SELF_PATH.replace("/home/", "/media/root-ro/home/", 1)
+        overlay_path = _SELF_PATH.replace("/home/", "/media/root-rw/overlay/home/", 1)
+        # ① 先更新 overlay + merged view（root-rw 永遠可寫、免 remount）→ 當前 process 與重啟後立即讀到新版。
+        #    先做這步：即使後面 root-ro 同步失敗，盒子仍跑新版、不會卡在半套狀態。
+        subprocess.run(["sudo", "bash", "-c", f"mkdir -p {os.path.dirname(overlay_path)} && cp {tmp_path} {overlay_path}"], check=True, timeout=10)
+        # 用 cat 就地覆寫（O_TRUNC），避免 cp 在 overlayfs 觸發 whiteout ENOTEMPTY（"Directory not empty"）
+        subprocess.run(["sudo", "bash", "-c", f"cat {tmp_path} > {_SELF_PATH} && sync"], check=True, timeout=10)
+        # ② 再同步 root-ro（重開機持久層）。remount rw 後「無論成敗都要 remount 回 ro」，
+        #    否則 remount,ro 若丟 EBUSY（盒子上常見）會把 root-ro 留在可寫狀態，防斷電保護失效到重開機。
+        subprocess.run(["sudo", "bash", "-c", "mount -o remount,rw /media/root-ro"], check=True, timeout=10)
+        try:
+            subprocess.run(["sudo", "bash", "-c", f"mkdir -p {os.path.dirname(real_path)} && cp {tmp_path} {real_path} && sync"], check=True, timeout=10)
+        finally:
+            try:
+                subprocess.run(["sudo", "bash", "-c", "mount -o remount,ro /media/root-ro"], check=True, timeout=10)
+            except subprocess.CalledProcessError:
+                time.sleep(1)  # EBUSY 常見，稍等再試一次確保還原唯讀
+                subprocess.run(["sudo", "bash", "-c", "sync && mount -o remount,ro /media/root-ro"], timeout=10)
+    else:
+        backup = _SELF_PATH + f".bak_{time.strftime('%Y%m%d_%H%M%S')}"
+        subprocess.run(["sudo", "bash", "-c", f"cp {_SELF_PATH} {backup} && cp {tmp_path} {_SELF_PATH}"], check=True, timeout=10)
+    threading.Thread(target=_delayed_restart, daemon=True).start()
+
+
 @app.route("/api/update/check")
 def api_update_check():
     try:
@@ -818,68 +889,58 @@ def api_update_check():
         remote_ver = info.get("version", "0")
         return jsonify({"current": VERSION, "latest": remote_ver,
                          "changelog": info.get("changelog", ""),
-                         "has_update": remote_ver != VERSION})
+                         "has_update": _ver_tuple(remote_ver) > _ver_tuple(VERSION)})
+    except requests.RequestException as e:
+        # 盒子本身通常沒有網路（自己是 AP）→ offline 旗標讓前端改用「手機瀏覽器中繼」
+        return jsonify({"error": f"盒子無法上網：{e}", "offline": True, "current": VERSION}), 502
     except Exception as e:
-        return jsonify({"error": f"無法連線更新伺服器：{e}"}), 502
+        return jsonify({"error": f"檢查更新失敗：{e}"}), 500
+
 
 @app.route("/api/update/apply", methods=["POST"])
 def api_update_apply():
+    """盒子自己有網路時的直連更新（一般盒子走不到，見 /api/update/upload）。"""
     if state["running"]:
         return jsonify({"error": "模擬執行中，請先停止再更新"}), 400
     try:
         r = requests.get(UPDATE_URL, timeout=10)
         r.raise_for_status()
         info = r.json()
-        if info.get("version") == VERSION:
-            return jsonify({"error": "已是最新版本"}), 400
-        file_url = info.get("url")
-        expected_sha256 = info.get("sha256", "")
-        if not file_url:
+        if not info.get("url"):
             return jsonify({"error": "更新資訊缺少下載連結"}), 500
-
-        fr = requests.get(file_url, timeout=30)
+        fr = requests.get(info["url"], timeout=30)
         fr.raise_for_status()
-        new_code = fr.content
-
-        if expected_sha256:
-            actual = hashlib.sha256(new_code).hexdigest()
-            if actual != expected_sha256:
-                return jsonify({"error": f"檔案驗證失敗（hash 不符）"}), 500
-
-        tmp_path = "/tmp/_gpsikmin_ota.py"
-        with open(tmp_path, "wb") as f:
-            f.write(new_code)
-
-        if _is_overlayroot():
-            real_path = _SELF_PATH.replace("/home/", "/media/root-ro/home/", 1)
-            overlay_path = _SELF_PATH.replace("/home/", "/media/root-rw/overlay/home/", 1)
-            # ① 先更新 overlay + merged view（root-rw 永遠可寫、免 remount）→ 當前 process 與重啟後立即讀到新版。
-            #    先做這步：即使後面 root-ro 同步失敗，盒子仍跑新版、不會卡在半套狀態。
-            subprocess.run(["sudo", "bash", "-c", f"mkdir -p {os.path.dirname(overlay_path)} && cp {tmp_path} {overlay_path}"], check=True, timeout=10)
-            # 用 cat 就地覆寫（O_TRUNC），避免 cp 在 overlayfs 觸發 whiteout ENOTEMPTY（"Directory not empty"）
-            subprocess.run(["sudo", "bash", "-c", f"cat {tmp_path} > {_SELF_PATH} && sync"], check=True, timeout=10)
-            # ② 再同步 root-ro（重開機持久層）。remount rw 後「無論成敗都要 remount 回 ro」，
-            #    否則 remount,ro 若丟 EBUSY（盒子上常見）會把 root-ro 留在可寫狀態，防斷電保護失效到重開機。
-            subprocess.run(["sudo", "bash", "-c", "mount -o remount,rw /media/root-ro"], check=True, timeout=10)
-            try:
-                subprocess.run(["sudo", "bash", "-c", f"mkdir -p {os.path.dirname(real_path)} && cp {tmp_path} {real_path} && sync"], check=True, timeout=10)
-            finally:
-                try:
-                    subprocess.run(["sudo", "bash", "-c", "mount -o remount,ro /media/root-ro"], check=True, timeout=10)
-                except subprocess.CalledProcessError:
-                    time.sleep(1)  # EBUSY 常見，稍等再試一次確保還原唯讀
-                    subprocess.run(["sudo", "bash", "-c", "sync && mount -o remount,ro /media/root-ro"], timeout=10)
-        else:
-            backup = _SELF_PATH + f".bak_{time.strftime('%Y%m%d_%H%M%S')}"
-            subprocess.run(["sudo", "bash", "-c", f"cp {_SELF_PATH} {backup} && cp {tmp_path} {_SELF_PATH}"], check=True, timeout=10)
-
-        threading.Thread(target=_delayed_restart, daemon=True).start()
+        err = _ota_verify(fr.content, info.get("version"), info.get("sha256"), info.get("sig"))
+        if err:
+            return jsonify({"error": err}), 400
+        _ota_install(fr.content)
         return jsonify({"ok": True, "new_version": info["version"],
                          "message": "更新完成，3 秒後自動重啟..."})
+    except requests.RequestException as e:
+        return jsonify({"error": f"盒子無法上網：{e}", "offline": True}), 502
     except subprocess.CalledProcessError as e:
         return jsonify({"error": f"寫入失敗：{e}"}), 500
     except Exception as e:
         return jsonify({"error": f"更新失敗：{e}"}), 500
+
+
+@app.route("/api/update/upload", methods=["POST"])
+def api_update_upload():
+    """手機瀏覽器中繼：手機（有行動網路）從 GitHub 抓更新包後上傳到盒子。
+    body=更新包原始位元組；版本/雜湊/簽章放在 X-OTA-* 標頭。一律離線驗章後才寫入。"""
+    if state["running"]:
+        return jsonify({"error": "模擬執行中，請先停止再更新"}), 400
+    code = request.get_data()
+    version = request.headers.get("X-OTA-Version", "")
+    err = _ota_verify(code, version, request.headers.get("X-OTA-Sha256", ""), request.headers.get("X-OTA-Sig", ""))
+    if err:
+        return jsonify({"error": err}), 400
+    try:
+        _ota_install(code)
+    except subprocess.CalledProcessError as e:
+        return jsonify({"error": f"寫入失敗：{e}"}), 500
+    return jsonify({"ok": True, "new_version": version,
+                     "message": "更新完成，3 秒後自動重啟..."})
 
 def _delayed_restart():
     time.sleep(3)
@@ -888,6 +949,62 @@ def _delayed_restart():
         if r.stdout.strip() == "active":
             subprocess.run(["sudo", "systemctl", "restart", svc], timeout=10)
             return
+
+_I2C_SLAVE = 0x0703
+_BATTERY_I2C_ADDR = 0x43  # INA219，Waveshare UPS HAT (C) 單節 18650
+
+
+def _read_battery_status():
+    """讀取自帶電源版本（Waveshare UPS HAT (C) / INA219）的電量狀態。
+    沒裝這片 HAT 的機器（大多數盒子）會直接回 present=False，前端據此隱藏電量顯示。"""
+    try:
+        fd = os.open("/dev/i2c-1", os.O_RDWR)
+    except OSError:
+        return {"present": False}
+    try:
+        fcntl.ioctl(fd, _I2C_SLAVE, _BATTERY_I2C_ADDR)
+
+        def read_reg(reg):
+            os.write(fd, bytes([reg]))
+            data = os.read(fd, 2)
+            return (data[0] << 8) | data[1]
+
+        def write_reg(reg, val):
+            os.write(fd, bytes([reg, (val >> 8) & 0xFF, val & 0xFF]))
+
+        # 校準暫存器每次開機都是 0，電流讀值需要先寫入才有效（見 pizero 語音助理同型 HAT 經驗）
+        write_reg(0x05, 4096)
+        bus_raw = read_reg(0x02)
+        voltage = (bus_raw >> 3) * 0.004
+        cur_raw = read_reg(0x04)
+        if cur_raw > 32767:
+            cur_raw -= 65536
+        current_ma = cur_raw * 0.1
+    except OSError:
+        return {"present": False}
+    finally:
+        os.close(fd)
+
+    percent = max(0, min(100, round((voltage - 3.0) / 1.2 * 100)))
+    if current_ma > 10:
+        charge_state = "charging"
+    elif current_ma < -10:
+        charge_state = "discharging"
+    else:
+        charge_state = "idle"
+    return {
+        "present": True,
+        "voltage": round(voltage, 2),
+        "percent": percent,
+        "current_ma": round(current_ma, 1),
+        "state": charge_state,
+    }
+
+
+@app.route("/api/battery")
+def api_battery():
+    return jsonify(_read_battery_status())
+
 
 @app.route("/api/version")
 def api_version():
@@ -1244,6 +1361,34 @@ def api_setup_mount():
         return jsonify({"ok": False, "output": str(e)})
 
 
+@app.route("/api/experimental/wifi_sync_status")
+def api_wifi_sync_status():
+    """實驗性功能：查詢目前手機的 WiFi 同步（wifi-connections）開關狀態。需 USB 連線中。"""
+    try:
+        r = subprocess.run([PMD3, "lockdown", "wifi-connections"],
+                           capture_output=True, text=True, timeout=8)
+        out = (r.stdout + r.stderr).strip()
+        return jsonify({"ok": r.returncode == 0, "output": out})
+    except Exception as e:
+        return jsonify({"ok": False, "output": str(e)})
+
+
+@app.route("/api/experimental/wifi_sync_enable", methods=["POST"])
+def api_wifi_sync_enable():
+    """實驗性功能：開啟手機的 WiFi 同步能力，讓 tunneld 之後有機會不靠 USB 線就抓到裝置
+    （tunneld 預設本來就有 --wifi 探索，缺的只是手機端這個開關）。需 USB 連線中才能設定。"""
+    try:
+        r = subprocess.run([PMD3, "lockdown", "wifi-connections", "--state", "on"],
+                           capture_output=True, text=True, timeout=10)
+        out = (r.stdout + r.stderr).strip()
+        ok = r.returncode == 0
+        return jsonify({"ok": ok, "output": out or ("已開啟" if ok else "設定失敗")})
+    except subprocess.TimeoutExpired:
+        return jsonify({"ok": False, "output": "逾時，請確認手機已解鎖且透過 USB 連線中"})
+    except Exception as e:
+        return jsonify({"ok": False, "output": str(e)})
+
+
 @app.route("/connect_phone", methods=["POST"])
 def connect_phone():
     global tunneld_proc, _tunneld_starting
@@ -1289,210 +1434,201 @@ HTML_PAGE = r"""<!DOCTYPE html>
 <script src="/static/leaflet.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: -apple-system, sans-serif; background: #1a1a2e; color: #eee; height: 100vh; display: flex; flex-direction: row; overflow: hidden; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #eef1f4; color: #1f2430; height: 100vh; display: flex; flex-direction: row; overflow: hidden; }
 
 #map { flex: 1; min-width: 0; }
 
-#sidebar { width: 280px; flex-shrink: 0; display: flex; flex-direction: column; background: #16213e; border-left: 2px solid #2a2a4e; overflow-y: auto; }
+#sidebar { width: 300px; flex-shrink: 0; display: flex; flex-direction: column; background: #ffffff; border-left: 1px solid #e2e6ec; overflow: hidden; }
 #btn-sb-toggle { display: none; }
 
-#header { background: #16213e; padding: 7px 10px; display: flex; align-items: center; gap: 5px; flex-wrap: wrap; border-bottom: 1px solid #2a2a4e; }
-#header h1 { font-size: 0.75rem; color: #7ee8a2; white-space: nowrap; width: 100%; }
-.ctrl { display: flex; align-items: center; gap: 5px; font-size: 0.62rem; }
-.ctrl label { color: #aaa; white-space: nowrap; }
-input[type=range] { width: 80px; accent-color: #7ee8a2; }
-#speed-val { color: #7ee8a2; font-weight: bold; min-width: 42px; }
-input[type=checkbox] { accent-color: #7ee8a2; width: 15px; height: 15px; }
-.btn { padding: 3px 7px; border: none; border-radius: 6px; cursor: pointer; font-size: 0.62rem; font-weight: bold; white-space: nowrap; touch-action: manipulation; }
-#btn-start { background: #7ee8a2; color: #1a1a2e; }
-#btn-start:disabled { background: #555; color: #888; cursor: not-allowed; }
-#btn-stop     { background: #e87e7e; color: #1a1a2e; }
-#btn-hold-stop{ background: #d4920a; color: #fff; }
-#btn-goldpot  { background: #7a5a00; color: #ffe; }
-#btn-undo     { background: #4a4a6a; color: #ccc; }
-#btn-clear { background: #4a4a6a; color: #ccc; }
+#header { background: #ffffff; padding: 10px 12px 8px; border-bottom: 1px solid #e2e6ec; flex-shrink: 0; }
+#header h1 { font-size: 0.85rem; color: #15803d; font-weight: 700; }
+
+/* 常駐操作列 */
+#pinned-actions { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-bottom: 1px solid #e2e6ec; flex-shrink: 0; }
+.big-btn { padding: 9px; border: none; border-radius: 8px; cursor: pointer; font-size: 0.78rem; font-weight: 700; touch-action: manipulation; width: 100%; }
+#btn-start { background: #7ee8a2; color: #14532d; }
+#btn-start:disabled { background: #eef1f4; color: #b0b6bf; cursor: not-allowed; }
+#btn-stop     { background: #ef4444; color: #fff; }
+#btn-hold-stop{ background: #d97706; color: #fff; }
+#btn-goldpot  { background: #92400e; color: #fff; }
+.mini-row { display: flex; gap: 6px; }
+.mini-row .big-btn { flex: 1; padding: 6px; font-size: 0.68rem; }
+#btn-undo, #btn-clear { background: #eef1f4; color: #374151; }
+
+/* Tab bar */
+#tab-bar { display: flex; border-bottom: 1px solid #e2e6ec; flex-shrink: 0; overflow-x: auto; }
+.tab-btn { flex: 1; background: none; border: none; padding: 8px 4px; font-size: 0.62rem; color: #6b7280; cursor: pointer; white-space: nowrap; border-bottom: 2px solid transparent; touch-action: manipulation; }
+.tab-btn.active { color: #15803d; border-bottom-color: #15803d; font-weight: 700; background: #f3faf5; }
+
+#tab-panels { flex: 1; overflow-y: auto; }
+.tab-panel { display: none; flex-direction: column; gap: 8px; padding: 10px 12px; }
+.tab-panel.active { display: flex; }
+
+.ctrl { display: flex; align-items: center; gap: 5px; font-size: 0.66rem; }
+.ctrl label { color: #4b5563; white-space: nowrap; }
+input[type=range] { width: 80px; accent-color: #15803d; }
+#speed-val { color: #15803d; font-weight: bold; min-width: 42px; }
+input[type=checkbox] { accent-color: #15803d; width: 15px; height: 15px; }
+.btn { padding: 4px 8px; border: none; border-radius: 6px; cursor: pointer; font-size: 0.64rem; font-weight: bold; white-space: nowrap; touch-action: manipulation; background:#eef1f4; color:#374151; }
 #btn-afk.afk-on { background: #7b5ea7; color: #fff; }
-#action-btns { display: flex; flex-wrap: wrap; gap: 5px; }
 .marker-type-row { display:flex; gap:4px; width:100%; }
-.btn-mtype { flex:1; background:#4a4a6a; color:#ccc; border:none; border-radius:6px; padding:4px 2px; font-size:1rem; cursor:pointer; border:2px solid transparent; transition:border-color 0.1s; }
-.btn-mtype.active { border-color:#f59e0b; background:#5a4a2a; }
+.btn-mtype { flex:1; background:#eef1f4; color:#4b5563; border:none; border-radius:6px; padding:4px 2px; font-size:1rem; cursor:pointer; border:2px solid transparent; transition:border-color 0.1s; }
+.btn-mtype.active { border-color:#f59e0b; background:#fff7e6; }
 
 /* 搜尋框 */
 .search-wrap { position: relative; display: flex; align-items: center; gap: 4px; width: 100%; }
-#search-input { background: #2a2a4e; border: 1px solid #3a3a6e; color: #eee; border-radius: 5px; padding: 3px 6px; font-size: 0.62rem; flex: 1; min-width: 0; }
-#search-input::placeholder { color: #555; }
-#btn-search { background: #5b8dee; color: #fff; border: none; border-radius: 5px; padding: 3px 7px; cursor: pointer; font-size: 0.62rem; font-weight: bold; flex-shrink: 0; }
-#search-results { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: #1e2a4e; border: 1px solid #3a3a6e; border-radius: 6px; z-index: 9999; max-height: 210px; overflow-y: auto; display: none; box-shadow: 0 4px 12px #000a; }
-#search-results div { padding: 5px 9px; cursor: pointer; font-size: 0.62rem; border-bottom: 1px solid #2a2a4e; line-height: 1.3; }
-#search-results div:hover { background: #2a3a6e; }
+#search-input { background: #f5f7f9; border: 1px solid #d8dee6; color: #1f2430; border-radius: 5px; padding: 4px 7px; font-size: 0.64rem; flex: 1; min-width: 0; }
+#search-input::placeholder { color: #9ca3af; }
+#btn-search { background: #5b8dee; color: #fff; border: none; border-radius: 5px; padding: 4px 8px; cursor: pointer; font-size: 0.64rem; font-weight: bold; flex-shrink: 0; }
+#search-results { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: #ffffff; border: 1px solid #d8dee6; border-radius: 6px; z-index: 9999; max-height: 210px; overflow-y: auto; display: none; box-shadow: 0 6px 18px rgba(20,30,50,.12); }
+#search-results div { padding: 6px 9px; cursor: pointer; font-size: 0.64rem; border-bottom: 1px solid #eef1f4; line-height: 1.3; }
+#search-results div:hover { background: #f3f6f9; }
 #search-results div:last-child { border-bottom: none; }
 
-/* 可折疊面板 */
-.panel-wrap { border-bottom: 1px solid #2a2a4e; }
-.panel-toggle { width: 100%; background: none; border: none; color: #7ee8a2; font-size: 0.62rem; font-weight: bold; cursor: pointer; padding: 4px 12px; display: flex; align-items: center; gap: 6px; }
-.panel-toggle:hover { background: rgba(255,255,255,0.03); }
-.panel-inner { padding: 0 16px 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.panel-inner.collapsed { display: none; }
-#route-bar { background: #111830; }
-.rl { color: #888; font-size: 0.62rem; white-space: nowrap; }
-#route-name { background: #2a2a4e; border: 1px solid #3a3a6e; color: #eee; border-radius: 5px; padding: 3px 6px; font-size: 0.62rem; width: 115px; }
-#route-select { background: #2a2a4e; border: 1px solid #3a3a6e; color: #eee; border-radius: 5px; padding: 3px 5px; font-size: 0.62rem; flex: 1; min-width: 140px; max-width: 270px; }
-.btn-sm { padding: 3px 7px; border: none; border-radius: 5px; cursor: pointer; font-size: 0.62rem; font-weight: bold; white-space: nowrap; }
+.section-label { font-size: 0.62rem; color: #9ca3af; text-transform: uppercase; letter-spacing: .03em; margin-top: 4px; }
+.field-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+#route-name { background: #f5f7f9; border: 1px solid #d8dee6; color: #1f2430; border-radius: 5px; padding: 4px 7px; font-size: 0.64rem; width: 115px; }
+#route-select { background: #f5f7f9; border: 1px solid #d8dee6; color: #1f2430; border-radius: 5px; padding: 4px 5px; font-size: 0.64rem; flex: 1; min-width: 140px; max-width: 270px; }
+.btn-sm { padding: 4px 8px; border: none; border-radius: 5px; cursor: pointer; font-size: 0.64rem; font-weight: bold; white-space: nowrap; background:#eef1f4; color:#374151; }
 #btn-save { background: #5b8dee; color: #fff; }
-#btn-save:disabled { background: #555; color: #888; cursor: not-allowed; }
-#btn-load { background: #7ee8a2; color: #1a1a2e; }
-#btn-load:disabled { background: #555; color: #888; cursor: not-allowed; }
-#btn-del  { background: #4a4a6a; color: #ccc; }
+#btn-save:disabled { background: #eef1f4; color: #b0b6bf; cursor: not-allowed; }
+#btn-load { background: #7ee8a2; color: #14532d; }
+#btn-load:disabled { background: #eef1f4; color: #b0b6bf; cursor: not-allowed; }
 .btn-gpx  { background: #a855f7; color: #fff; cursor: pointer; }
 .btn-gpx input { display: none; }
-input[type=time] { background: #2a2a4e; border: 1px solid #3a3a6e; color: #eee; border-radius: 5px; padding: 2px 4px; font-size: 0.62rem; }
+input[type=time] { background: #f5f7f9; border: 1px solid #d8dee6; color: #1f2430; border-radius: 5px; padding: 3px 5px; font-size: 0.64rem; }
 
 /* 資訊列 */
-#info-bar { position: fixed; top: 10px; right: 300px; max-width: 260px; background: rgba(15,52,96,0.88); backdrop-filter: blur(4px); border: 1px solid #2a4a7e; border-radius: 8px; padding: 5px 10px; font-size: 0.58rem; color: #aef; display: flex; flex-direction: column; gap: 3px; z-index: 500; pointer-events: none; }
+#info-bar { position: fixed; top: 10px; right: 316px; max-width: 260px; background: rgba(255,255,255,0.92); backdrop-filter: blur(4px); border: 1px solid #e2e6ec; border-radius: 8px; padding: 6px 10px; font-size: 0.6rem; color: #1f2430; display: flex; flex-direction: column; gap: 3px; z-index: 500; pointer-events: none; box-shadow: 0 4px 14px rgba(20,30,50,.1); }
 #info-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-#progress-bar { width: 100%; height: 6px; background: #333; border-radius: 3px; }
-#progress-fill { height: 100%; background: #7ee8a2; border-radius: 3px; width: 0%; transition: width 0.5s; }
-.stat { color: #7ee8a2; font-weight: bold; white-space: nowrap; }
-.wp-label { background: #e87e7e; color: #fff; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; }
+#progress-bar { width: 100%; height: 6px; background: #eef1f4; border-radius: 3px; }
+#progress-fill { height: 100%; background: #15803d; border-radius: 3px; width: 0%; transition: width 0.5s; }
+.stat { color: #15803d; font-weight: bold; white-space: nowrap; }
+.wp-label { background: #ef4444; color: #fff; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; box-shadow: 0 1px 4px rgba(0,0,0,.3); }
 
 /* 熱點篩選按鈕 */
-.sf-btn { background:#2a2a4e;color:#aaa;border:1px solid #3a3a6e;border-radius:4px;padding:3px 7px;cursor:pointer;font-size:0.62rem; }
-.sf-btn:hover { background:#3a3a6e; }
+.sf-btn { background:#eef1f4;color:#4b5563;border:1px solid #d8dee6;border-radius:4px;padding:4px 8px;cursor:pointer;font-size:0.64rem; }
+.sf-btn:hover { background:#e5e9ee; }
 .sf-btn.sf-active { background:#5b8dee;color:#fff;border-color:#5b8dee; }
-
-/* Leaflet popup 深色主題 */
-.leaflet-popup-content-wrapper { background: #1e2a4e !important; color: #eee !important; border: 1px solid #3a3a6e !important; box-shadow: 0 4px 12px #000a !important; }
-.leaflet-popup-tip { background: #1e2a4e !important; }
-.leaflet-popup-close-button { color: #aaa !important; }
 
 /* GPS 十字標記 */
 .goto-cross { position: relative; width: 32px; height: 32px; cursor: pointer; }
-.goto-cross::before, .goto-cross::after { content:''; position: absolute; background: #ff4444; border-radius: 2px; }
+.goto-cross::before, .goto-cross::after { content:''; position: absolute; background: #ef4444; border-radius: 2px; }
 .goto-cross::before { width: 3px; height: 100%; left: 50%; transform: translateX(-50%); }
 .goto-cross::after  { width: 100%; height: 3px; top: 50%; transform: translateY(-50%); }
-.goto-cross-ring { position: absolute; top: 50%; left: 50%; width: 14px; height: 14px; border: 2px solid #ff4444; border-radius: 50%; transform: translate(-50%,-50%); }
+.goto-cross-ring { position: absolute; top: 50%; left: 50%; width: 14px; height: 14px; border: 2px solid #ef4444; border-radius: 50%; transform: translate(-50%,-50%); }
 
-/* 地圖智取 */
-#overlay-opacity { width: 100%; accent-color: #7ee8a2; cursor: pointer; margin: 2px 0; }
-.overlay-active { background: #7ee8a2 !important; color: #16213e !important; font-weight: bold; }
-.overlay-corner { width: 26px; height: 26px; background: #7ee8a2; border: 2px solid #fff; border-radius: 50%; cursor: move; }
+/* 地圖疊圖 */
+#overlay-opacity { width: 100%; accent-color: #15803d; cursor: pointer; margin: 2px 0; }
+.overlay-active { background: #15803d !important; color: #fff !important; font-weight: bold; }
+.overlay-corner { width: 26px; height: 26px; background: #7ee8a2; border: 2px solid #fff; border-radius: 50%; cursor: move; box-shadow: 0 1px 4px rgba(0,0,0,.35); }
 
 /* GPS 座標跳轉框 */
-#goto-box { position: fixed; bottom: 24px; left: 10px; background: rgba(15,52,96,0.92); backdrop-filter: blur(4px); border: 1px solid #2a4a7e; border-radius: 8px; padding: 6px 8px; z-index: 500; display: flex; gap: 5px; align-items: center; }
-#goto-box input { background: #0d1b3e; border: 1px solid #3a3a6e; border-radius: 5px; color: #eee; padding: 4px 7px; font-size: 0.65rem; width: 155px; outline: none; }
-#goto-box input::placeholder { color: #556; }
+#goto-box { position: fixed; bottom: 24px; left: 10px; background: rgba(255,255,255,0.94); backdrop-filter: blur(4px); border: 1px solid #e2e6ec; border-radius: 8px; padding: 6px 8px; z-index: 500; display: flex; gap: 5px; align-items: center; box-shadow: 0 4px 14px rgba(20,30,50,.1); }
+#goto-box input { background: #f5f7f9; border: 1px solid #d8dee6; border-radius: 5px; color: #1f2430; padding: 4px 7px; font-size: 0.65rem; width: 155px; outline: none; }
+#goto-box input::placeholder { color: #9ca3af; }
 #goto-box button { background: #5b8dee; border: none; border-radius: 5px; color: #fff; padding: 4px 8px; font-size: 0.65rem; cursor: pointer; white-space: nowrap; }
-#goto-box button:hover { background: #7aaaf5; }
+#goto-box button:hover { background: #4a7de0; }
 
-/* 行動版：改回上下排列 */
+/* 行動版 */
 @media (max-width: 768px) {
   body { flex-direction: column; }
-  #sidebar { width: 100%; border-left: none; border-top: 2px solid #2a2a4e; max-height: 52vh; transition: max-height 0.25s ease; }
+  #sidebar { width: 100%; border-left: none; border-top: 1px solid #e2e6ec; max-height: 58vh; transition: max-height 0.25s ease; }
   #sidebar.sb-collapsed { max-height: 44px !important; overflow: hidden; }
   #btn-sb-toggle { display: inline-block; }
   #map { flex: 1; min-height: 0; }
   #info-bar { right: 10px; top: 10px; font-size: 0.72rem; }
   #goto-box { left: 8px; }
 
-  /* 放大觸控按鈕 */
   button { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
-  .btn { font-size: 0.9rem !important; padding: 10px 14px !important; }
-  .btn-sm { font-size: 0.88rem !important; padding: 9px 12px !important; }
+  .big-btn { font-size: 0.95rem !important; padding: 12px !important; }
+  .mini-row .big-btn { font-size: 0.8rem !important; padding: 9px !important; }
+  .btn { font-size: 0.88rem !important; padding: 9px 12px !important; }
+  .btn-sm { font-size: 0.86rem !important; padding: 9px 12px !important; }
   .btn-mtype { font-size: 1.3rem !important; padding: 10px 4px !important; }
 
-  /* 控制列字體 */
   .ctrl { font-size: 0.82rem !important; gap: 8px; }
   .ctrl label { font-size: 0.82rem !important; }
   input[type=checkbox] { width: 22px !important; height: 22px !important; cursor: pointer; }
   input[type=range] { width: 110px !important; }
   #speed-val { font-size: 0.84rem !important; }
 
-  /* 標題列 */
-  #header { padding: 10px 12px; gap: 9px; }
+  #header { padding: 10px 12px; }
   #header h1 { font-size: 0.95rem; }
+  .tab-btn { font-size: 0.78rem; padding: 10px 4px; }
 
-  /* 操作按鈕 2 欄 Grid */
-  #action-btns { display: grid !important; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; }
-  #action-btns .marker-type-row { grid-column: 1 / -1; }
-  #btn-start, #btn-stop, #btn-hold-stop { grid-column: 1 / -1; }
-
-  /* 尋菇/瞬移/繞圈展開面板 */
   #mushroom-dwell-row *, #flower-settings *, #circle-settings * { font-size: 0.82rem !important; }
   #mushroom-dwell-row input, #flower-settings input, #circle-settings input { padding: 6px 8px !important; }
   #mushroom-dwell-row button, #flower-settings button, #circle-settings button { padding: 9px 10px !important; }
 
-  /* 搜尋框 */
   #search-input { font-size: 0.84rem !important; padding: 9px 10px !important; }
   #btn-search { font-size: 0.84rem !important; padding: 9px 12px !important; }
 
-  /* 可折疊面板 */
-  .panel-toggle { font-size: 0.88rem; padding: 10px 14px; }
-  .panel-inner { padding: 8px 14px 12px; gap: 9px; }
-  .rl { font-size: 0.84rem !important; }
   #route-name { font-size: 0.84rem !important; padding: 8px 8px !important; }
   #route-select { font-size: 0.84rem !important; padding: 8px 8px !important; }
   input[type=time] { font-size: 0.84rem !important; padding: 8px 6px !important; }
   .sf-btn { font-size: 0.84rem !important; padding: 9px 12px !important; }
 
-  /* GPS 跳轉框 */
   #goto-box input { font-size: 0.84rem !important; padding: 8px 10px !important; width: 140px !important; }
   #goto-box button { font-size: 0.84rem !important; padding: 8px 10px !important; }
 }
 #setup-overlay {
-  display: none; position: fixed; inset: 0; background: rgba(0,0,0,.7);
+  display: none; position: fixed; inset: 0; background: rgba(15,23,42,.55);
   z-index: 9999; align-items: center; justify-content: center;
 }
 #setup-overlay.active { display: flex; }
 #setup-box {
-  background: #1e1e3a; border: 1px solid #4a4a8a; border-radius: 12px;
-  padding: 24px; width: 340px; max-width: 95vw; color: #eee;
+  background: #ffffff; border: 1px solid #e2e6ec; border-radius: 12px;
+  padding: 24px; width: 340px; max-width: 95vw; color: #1f2430;
+  box-shadow: 0 12px 32px rgba(20,30,50,.2);
 }
 #setup-box h3 { font-size: 1.1rem; margin-bottom: 16px; text-align: center; }
 .setup-step {
   display: flex; align-items: flex-start; gap: 10px;
   padding: 8px; border-radius: 6px; margin-bottom: 6px; font-size: 0.85rem;
 }
-.setup-step.active { background: #2a2a5a; }
+.setup-step.active { background: #f3faf5; }
 .setup-step.done { opacity: .5; }
 .step-icon { font-size: 1.1rem; width: 22px; flex-shrink: 0; text-align: center; }
 .step-text { flex: 1; }
 .step-title { font-weight: bold; margin-bottom: 2px; }
-.step-desc { color: #aaa; font-size: 0.78rem; }
+.step-desc { color: #6b7280; font-size: 0.78rem; }
 #setup-msg {
-  background: #2a2a4e; border-radius: 8px; padding: 12px;
+  background: #f5f7f9; border-radius: 8px; padding: 12px;
   margin: 14px 0; font-size: 0.82rem; line-height: 1.5; min-height: 48px;
 }
 #setup-progress-bar {
-  height: 4px; background: #4a4a6a; border-radius: 2px; margin-bottom: 14px; overflow: hidden;
+  height: 4px; background: #e2e6ec; border-radius: 2px; margin-bottom: 14px; overflow: hidden;
 }
 #setup-progress-fill { height: 100%; background: #7ee8a2; width: 0; transition: width .4s; }
 #setup-action-btn {
-  width: 100%; padding: 10px; background: #5a5aaa; color: #fff;
+  width: 100%; padding: 10px; background: #5b8dee; color: #fff;
   border: none; border-radius: 8px; font-size: 0.9rem; cursor: pointer;
 }
-#setup-action-btn:disabled { background: #3a3a6a; color: #888; cursor: default; }
-#setup-action-btn.success { background: #4a9a6a; }
+#setup-action-btn:disabled { background: #eef1f4; color: #9ca3af; cursor: default; }
+#setup-action-btn.success { background: #16a34a; }
 
 /* ── 說明手冊 Modal ── */
-#help-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.78); z-index:9998; align-items:center; justify-content:center; }
+#help-overlay { display:none; position:fixed; inset:0; background:rgba(15,23,42,.55); z-index:9998; align-items:center; justify-content:center; }
 #help-overlay.active { display:flex; }
-#help-box { background:#1a1a30; border:1px solid #4a4a8a; border-radius:12px; width:92vw; max-width:540px; max-height:88vh; display:flex; flex-direction:column; color:#eee; box-shadow:0 8px 32px #000c; }
-#help-hdr { display:flex; justify-content:space-between; align-items:center; padding:13px 18px; border-bottom:1px solid #2a2a5a; flex-shrink:0; }
-#help-hdr span { font-size:1rem; font-weight:bold; color:#7ee8a2; }
-#help-hdr button { background:none; border:none; color:#aaa; font-size:1.3rem; cursor:pointer; line-height:1; padding:2px 6px; }
+#help-box { background:#ffffff; border:1px solid #e2e6ec; border-radius:12px; width:92vw; max-width:540px; max-height:88vh; display:flex; flex-direction:column; color:#1f2430; box-shadow:0 12px 32px rgba(20,30,50,.22); }
+#help-hdr { display:flex; justify-content:space-between; align-items:center; padding:13px 18px; border-bottom:1px solid #e2e6ec; flex-shrink:0; }
+#help-hdr span { font-size:1rem; font-weight:bold; color:#15803d; }
+#help-hdr button { background:none; border:none; color:#6b7280; font-size:1.3rem; cursor:pointer; line-height:1; padding:2px 6px; }
 #help-body { overflow-y:auto; padding:6px 0 12px; }
-.hs { border-bottom:1px solid #222244; }
-.hs-btn { width:100%; background:none; border:none; color:#aef; font-size:0.85rem; font-weight:bold; padding:11px 18px; text-align:left; cursor:pointer; display:flex; justify-content:space-between; align-items:center; touch-action:manipulation; }
-.hs-btn:hover { background:rgba(255,255,255,.04); }
-.hs-body { display:none; padding:2px 18px 12px; font-size:0.8rem; line-height:1.7; color:#bbb; }
+.hs { border-bottom:1px solid #eef1f4; }
+.hs-btn { width:100%; background:none; border:none; color:#1f2430; font-size:0.85rem; font-weight:bold; padding:11px 18px; text-align:left; cursor:pointer; display:flex; justify-content:space-between; align-items:center; touch-action:manipulation; }
+.hs-btn:hover { background:#f7f9fb; }
+.hs-body { display:none; padding:2px 18px 12px; font-size:0.8rem; line-height:1.7; color:#4b5563; }
 .hs-body.open { display:block; }
-.hs-body b { color:#7ee8a2; }
-.hs-body .tip { background:#1e2a4e; border-left:3px solid #5b8dee; border-radius:4px; padding:6px 10px; margin:6px 0; font-size:0.78rem; color:#9bd; }
+.hs-body b { color:#15803d; }
+.hs-body .tip { background:#eef4ff; border-left:3px solid #5b8dee; border-radius:4px; padding:6px 10px; margin:6px 0; font-size:0.78rem; color:#1d4ed8; }
 .hs-body ul { padding-left:1.2em; margin:4px 0; }
 .hs-body li { margin-bottom:3px; }
 .hs-body table { width:100%; border-collapse:collapse; margin:6px 0; font-size:0.78rem; }
-.hs-body td { padding:4px 8px; border:1px solid #2a2a5a; }
-.hs-body tr:first-child td { background:#1e2a4e; color:#aef; font-weight:bold; }
+.hs-body td { padding:4px 8px; border:1px solid #e2e6ec; }
+.hs-body tr:first-child td { background:#f3f6f9; color:#15803d; font-weight:bold; }
 </style>
 </head>
 <body>
@@ -1508,91 +1644,125 @@ input[type=time] { background: #2a2a4e; border: 1px solid #3a3a6e; color: #eee; 
 <div id="sidebar">
   <div id="header">
     <div style="display:flex;align-items:center;justify-content:space-between;width:100%">
-      <h1 style="width:auto">🌱 GPsikmin <span id="ver-tag" style="font-size:0.45rem;color:#666;font-weight:normal"></span></h1>
-      <div style="display:flex;gap:5px">
-        <button id="btn-sb-toggle" onclick="toggleSidebar()" style="background:#2a4a2a;border:1px solid #3a6a3a;color:#7ee8a2;border-radius:6px;padding:4px 10px;font-size:0.68rem;cursor:pointer;touch-action:manipulation;white-space:nowrap">⬇ 收起</button>
-        <button onclick="openHelp()" style="background:#2a3a6a;border:1px solid #3a4a8a;color:#aef;border-radius:6px;padding:4px 10px;font-size:0.68rem;cursor:pointer;touch-action:manipulation;white-space:nowrap">❓ 說明</button>
+      <h1 style="width:auto">🌱 GPsikmin <span id="ver-tag" style="font-size:0.48rem;color:#9ca3af;font-weight:normal"></span></h1>
+      <div style="display:flex;gap:5px;align-items:center">
+        <span id="battery-badge" style="display:none;align-items:center;gap:2px;font-size:0.62rem;font-weight:700;border-radius:10px;padding:2px 7px;white-space:nowrap"></span>
+        <button id="btn-sb-toggle" onclick="toggleSidebar()" style="background:#eef1f4;border:1px solid #d8dee6;color:#15803d;border-radius:6px;padding:4px 10px;font-size:0.68rem;cursor:pointer;touch-action:manipulation;white-space:nowrap">⬇ 收起</button>
+        <button onclick="openHelp()" style="background:#eef1f4;border:1px solid #d8dee6;color:#2563eb;border-radius:6px;padding:4px 10px;font-size:0.68rem;cursor:pointer;touch-action:manipulation;white-space:nowrap">❓ 說明</button>
       </div>
     </div>
-    <div class="ctrl">
-      <label>速度</label>
-      <input type="range" id="speed" min="3" max="25" step="0.5" value="5">
-      <span id="speed-val">5.0 km/h</span>
+  </div>
+
+  <div id="pinned-actions">
+    <button class="big-btn" id="btn-start" onclick="startSim()" disabled>▶ 開始</button>
+    <button class="big-btn" id="btn-stop" onclick="stopSim()" style="display:none">⏹ 停止</button>
+    <button class="big-btn" id="btn-hold-stop" onclick="holdStopSim()" style="display:none" title="凍結GPS在當前位置（不清除定位），方便走向目標後繼續">⏸ 臨停GPS</button>
+    <button class="big-btn" id="btn-goldpot" onclick="startGoldpot()" style="display:none" title="凍結GPS在金盆位置，倒數後斷線DVT，趁機互動金盆（需配合 IPLocate）">🪣 拉金盆</button>
+    <div class="mini-row">
+      <button class="big-btn" id="btn-undo" onclick="undoWaypoint()">↩ 上一點</button>
+      <button class="big-btn" id="btn-clear" onclick="clearAll()">🗑 清除</button>
     </div>
-    <div class="ctrl"><input type="checkbox" id="loop"><label for="loop">折返</label></div>
-    <div class="ctrl"><input type="checkbox" id="straight"><label for="straight">直線</label></div>
-    <div class="ctrl">
-      <input type="checkbox" id="mushroom-mode" onchange="onMushroomModeChange()">
-      <label for="mushroom-mode">🍄 尋菇模式</label>
+  </div>
+
+  <div id="tab-bar">
+    <button class="tab-btn active" id="tabbtn-move" onclick="switchTab('move')">🚗 移動</button>
+    <button class="tab-btn" id="tabbtn-marks" onclick="switchTab('marks')">📍 標記</button>
+    <button class="tab-btn" id="tabbtn-remote" onclick="switchTab('remote')">🕹️ 搖桿</button>
+    <button class="tab-btn" id="tabbtn-overlay" onclick="switchTab('overlay')">🗾 疊圖</button>
+    <button class="tab-btn" id="tabbtn-update" onclick="switchTab('update')">🔄 更新</button>
+  </div>
+
+  <div id="tab-panels">
+    <div class="tab-panel active" id="tab-move">
+      <div class="ctrl">
+        <label>速度</label>
+        <input type="range" id="speed" min="3" max="25" step="0.5" value="5">
+        <span id="speed-val">5.0 km/h</span>
+      </div>
+      <div class="ctrl"><input type="checkbox" id="loop"><label for="loop">折返</label></div>
+      <div class="ctrl"><input type="checkbox" id="straight"><label for="straight">直線</label></div>
+      <div class="ctrl"><input type="checkbox" id="auto-follow" checked><label for="auto-follow">跟隨</label></div>
+
+      <div class="ctrl">
+        <input type="checkbox" id="mushroom-mode" onchange="onMushroomModeChange()">
+        <label for="mushroom-mode">🍄 尋菇模式</label>
+      </div>
+      <div id="mushroom-dwell-row" style="display:none;flex-direction:column;gap:4px;padding:2px 0">
+        <div style="display:flex;align-items:center;gap:4px;font-size:0.62rem;color:#4b5563">
+          <label>停留</label>
+          <input type="number" id="dwell-minutes" value="5" min="1" max="30"
+                 style="width:38px;background:#f5f7f9;border:1px solid #d8dee6;color:#1f2430;border-radius:4px;padding:2px 4px;font-size:0.62rem;text-align:center">
+          <label>分鐘/點</label>
+          <input type="checkbox" id="patrol-loop" style="margin-left:6px">
+          <label for="patrol-loop">循環</label>
+        </div>
+        <button class="btn" onclick="openPickMarkersModal()"
+                style="background:#f3ecff;color:#5a3a8a;width:100%" title="從已存標記挑選尋菇點">
+          📌 從標記選點
+        </button>
+      </div>
+
+      <div class="ctrl">
+        <input type="checkbox" id="flower-mode" onchange="onFlowerModeChange()">
+        <label for="flower-mode">🌸 瞬間移動</label>
+      </div>
+      <div id="flower-settings" style="display:none;flex-direction:column;gap:5px;padding:2px 0">
+        <div style="display:flex;align-items:center;gap:4px;font-size:0.62rem;color:#4b5563">
+          <input type="text" id="flower-coord" placeholder="緯度,經度"
+                 onkeydown="if(event.key==='Enter')flowerConfirmCoord()"
+                 style="flex:1;background:#f5f7f9;border:1px solid #d8dee6;color:#1f2430;border-radius:4px;padding:3px 5px;font-size:0.62rem;outline:none">
+          <button onclick="flowerUseMapCenter()" title="使用地圖中心"
+                  style="background:#5b8dee;border:none;border-radius:4px;color:#fff;padding:3px 6px;font-size:0.62rem;cursor:pointer;white-space:nowrap">📍 地圖中心</button>
+        </div>
+        <button onclick="flowerConfirmCoord()"
+                style="background:#7ee8a2;border:none;border-radius:5px;color:#14532d;padding:4px;font-size:0.65rem;cursor:pointer;width:100%">
+          ✓ 確認座標（在地圖上標記）
+        </button>
+        <div id="flower-confirmed" style="display:none;font-size:0.6rem;color:#15803d;padding:1px 0">
+          ✅ 已設定目標點
+        </div>
+        <div style="display:flex;align-items:center;gap:4px;font-size:0.62rem;color:#9ca3af">
+          <label style="color:#9ca3af">先移到目標 5m 外，再移過去並停留</label>
+        </div>
+      </div>
+
+      <div class="ctrl">
+        <input type="checkbox" id="circle-mode" onchange="onCircleModeChange()">
+        <label for="circle-mode">🚶 繞圈種花</label>
+      </div>
+      <div id="circle-settings" style="display:none;flex-direction:column;gap:5px;padding:2px 0">
+        <div style="display:flex;align-items:center;gap:4px;font-size:0.62rem;color:#4b5563">
+          <input type="text" id="circle-coord" placeholder="緯度,經度"
+                 onkeydown="if(event.key==='Enter')circleConfirmCoord()"
+                 style="flex:1;background:#f5f7f9;border:1px solid #d8dee6;color:#1f2430;border-radius:4px;padding:3px 5px;font-size:0.62rem;outline:none">
+          <button onclick="circleUseMapCenter()" title="使用地圖中心"
+                  style="background:#5b8dee;border:none;border-radius:4px;color:#fff;padding:3px 6px;font-size:0.62rem;cursor:pointer;white-space:nowrap">📍 地圖中心</button>
+        </div>
+        <button onclick="circleConfirmCoord()"
+                style="background:#7ee8a2;border:none;border-radius:5px;color:#14532d;padding:4px;font-size:0.65rem;cursor:pointer;width:100%">
+          ✓ 確認座標（在地圖上標記）
+        </button>
+        <div id="circle-confirmed" style="display:none;font-size:0.6rem;color:#15803d;padding:1px 0">
+          ✅ 已設定目標點
+        </div>
+        <div style="display:flex;align-items:center;gap:4px;font-size:0.62rem;color:#4b5563">
+          <label>半徑</label>
+          <input type="range" id="circle-radius" min="10" max="50" step="5" value="20"
+                 oninput="document.getElementById('circle-radius-val').textContent=this.value+'m'"
+                 style="flex:1">
+          <span id="circle-radius-val">20m</span>
+        </div>
+      </div>
+
+      <div class="search-wrap">
+        <input type="text" id="search-input" placeholder="🔍 搜尋地點"
+               onkeydown="if(event.key==='Enter')searchPlace()">
+        <button id="btn-search" onclick="searchPlace()">搜尋</button>
+        <div id="search-results"></div>
+      </div>
     </div>
-    <div id="mushroom-dwell-row" style="display:none;flex-direction:column;gap:4px;padding:2px 0">
-      <div style="display:flex;align-items:center;gap:4px;font-size:0.62rem;color:#ccc">
-        <label>停留</label>
-        <input type="number" id="dwell-minutes" value="5" min="1" max="30"
-               style="width:38px;background:#2a2a4e;border:1px solid #3a3a6e;color:#eee;border-radius:4px;padding:2px 4px;font-size:0.62rem;text-align:center">
-        <label>分鐘/點</label>
-        <input type="checkbox" id="patrol-loop" style="margin-left:6px">
-        <label for="patrol-loop">循環</label>
-      </div>
-      <button class="btn" onclick="openPickMarkersModal()"
-              style="background:#5a3a8a;color:#ddd;width:100%" title="從已存標記挑選尋菇點">
-        📌 從標記選點
-      </button>
-    </div>
-    <div class="ctrl">
-      <input type="checkbox" id="flower-mode" onchange="onFlowerModeChange()">
-      <label for="flower-mode">🌸 瞬間移動</label>
-    </div>
-    <div id="flower-settings" style="display:none;flex-direction:column;gap:5px;padding:2px 0">
-      <div style="display:flex;align-items:center;gap:4px;font-size:0.62rem;color:#ccc">
-        <input type="text" id="flower-coord" placeholder="緯度,經度"
-               onkeydown="if(event.key==='Enter')flowerConfirmCoord()"
-               style="flex:1;background:#2a2a4e;border:1px solid #3a3a6e;color:#eee;border-radius:4px;padding:3px 5px;font-size:0.62rem;outline:none">
-        <button onclick="flowerUseMapCenter()" title="使用地圖中心"
-                style="background:#5b8dee;border:none;border-radius:4px;color:#fff;padding:3px 6px;font-size:0.62rem;cursor:pointer;white-space:nowrap">📍 地圖中心</button>
-      </div>
-      <button onclick="flowerConfirmCoord()"
-              style="background:#4a7a5a;border:none;border-radius:5px;color:#eee;padding:4px;font-size:0.65rem;cursor:pointer;width:100%">
-        ✓ 確認座標（在地圖上標記）
-      </button>
-      <div id="flower-confirmed" style="display:none;font-size:0.6rem;color:#7ee8a2;padding:1px 0">
-        ✅ 已設定目標點
-      </div>
-      <div style="display:flex;align-items:center;gap:4px;font-size:0.62rem;color:#ccc">
-        <label style="color:#888">先移到目標 5m 外，再移過去並停留</label>
-      </div>
-    </div>
-    <div class="ctrl">
-      <input type="checkbox" id="circle-mode" onchange="onCircleModeChange()">
-      <label for="circle-mode">🚶 繞圈種花</label>
-    </div>
-    <div id="circle-settings" style="display:none;flex-direction:column;gap:5px;padding:2px 0">
-      <div style="display:flex;align-items:center;gap:4px;font-size:0.62rem;color:#ccc">
-        <input type="text" id="circle-coord" placeholder="緯度,經度"
-               onkeydown="if(event.key==='Enter')circleConfirmCoord()"
-               style="flex:1;background:#2a2a4e;border:1px solid #3a3a6e;color:#eee;border-radius:4px;padding:3px 5px;font-size:0.62rem;outline:none">
-        <button onclick="circleUseMapCenter()" title="使用地圖中心"
-                style="background:#5b8dee;border:none;border-radius:4px;color:#fff;padding:3px 6px;font-size:0.62rem;cursor:pointer;white-space:nowrap">📍 地圖中心</button>
-      </div>
-      <button onclick="circleConfirmCoord()"
-              style="background:#4a7a5a;border:none;border-radius:5px;color:#eee;padding:4px;font-size:0.65rem;cursor:pointer;width:100%">
-        ✓ 確認座標（在地圖上標記）
-      </button>
-      <div id="circle-confirmed" style="display:none;font-size:0.6rem;color:#7ee8a2;padding:1px 0">
-        ✅ 已設定目標點
-      </div>
-      <div style="display:flex;align-items:center;gap:4px;font-size:0.62rem;color:#ccc">
-        <label>半徑</label>
-        <input type="range" id="circle-radius" min="10" max="50" step="5" value="20"
-               oninput="document.getElementById('circle-radius-val').textContent=this.value+'m'"
-               style="flex:1">
-        <span id="circle-radius-val">20m</span>
-      </div>
-    </div>
-    <div class="ctrl"><input type="checkbox" id="auto-follow" checked><label for="auto-follow">跟隨</label></div>
-    <div id="action-btns">
-      <button class="btn" id="btn-undo"  onclick="undoWaypoint()">↩ 上一點</button>
-      <button class="btn" id="btn-clear" onclick="clearAll()">🗑 清除</button>
+
+    <div class="tab-panel" id="tab-marks">
       <div class="marker-type-row" title="選擇標記類型後點地圖新增">
         <button class="btn-mtype" id="mtype-mushroom" onclick="toggleMarkerMode('mushroom')" title="蘑菇">🍄</button>
         <button class="btn-mtype" id="mtype-plant"    onclick="toggleMarkerMode('plant')"    title="大花">🌸</button>
@@ -1600,104 +1770,96 @@ input[type=time] { background: #2a2a4e; border: 1px solid #3a3a6e; color: #eee; 
         <button class="btn-mtype" id="mtype-pin"      onclick="toggleMarkerMode('pin')"      title="標記">📍</button>
       </div>
       <button class="btn" onclick="openMarkersModal()"
-              style="background:#3a5a8a;color:#ccc" title="我的標記清單">📋 我的標記</button>
-      <button class="btn" id="btn-connect" onclick="connectPhone()" style="background:#4a4a6a;color:#ccc" title="連線 iPhone">🔌 連線手機</button>
-      <button class="btn" id="btn-afk" onclick="toggleAfkMode()" style="background:#4a4a6a;color:#ccc" title="掛機：斷線自動重連並重啟">🌙 掛機模式</button>
-      <button class="btn" id="btn-start"   onclick="startSim()" disabled>▶ 開始</button>
-      <button class="btn" id="btn-stop"    onclick="stopSim()" style="display:none">⏹ 停止</button>
-      <button class="btn" id="btn-hold-stop" onclick="holdStopSim()" style="display:none" title="凍結GPS在當前位置（不清除定位），方便走向目標後繼續">⏸ 臨停GPS</button>
-      <button class="btn" id="btn-goldpot" onclick="startGoldpot()" style="display:none" title="凍結GPS在金盆位置，倒數後斷線DVT，趁機互動金盆（需配合 IPLocate）">🪣 拉金盆</button>
-      <button class="btn" id="btn-joystick" onclick="toggleJoystick()" style="background:#4a4a6a;color:#ccc" title="實體搖桿模式">🕹️ 搖桿 <span id="ble-dot" style="color:#555" title="搖桿未連線">●</span></button>
+              style="background:#dbe8ff;color:#1d4ed8;width:100%" title="我的標記清單">📋 我的標記</button>
+
+      <div class="section-label">路線管理</div>
+      <div class="field-row">
+        <span style="font-size:0.62rem;color:#6b7280">儲存：</span>
+        <input type="text" id="route-name" placeholder="路線名稱">
+        <button class="btn-sm" id="btn-save" onclick="saveRoute()" disabled>💾 儲存</button>
+      </div>
+      <div class="field-row">
+        <span style="font-size:0.62rem;color:#6b7280">載入：</span>
+        <select id="route-select"><option value="">-- 選擇路線 --</option></select>
+        <button class="btn-sm" id="btn-load" onclick="loadRoute()" disabled>📂 載入</button>
+      </div>
+      <div class="field-row">
+        <button class="btn-sm" id="btn-spots" onclick="openSpotsModal()"
+                style="background:#fbe4ec;color:#be185d" title="載入 pogoskill 熱點座標">🗺️ 熱點</button>
+        <button class="btn-sm" id="btn-del"  onclick="deleteRoute()">🗑 刪除</button>
+        <button class="btn-sm" id="btn-export" onclick="exportRoute()" disabled title="加密匯出 .gpsikmin">⬇ 匯出</button>
+      </div>
+      <div class="field-row">
+        <button class="btn-sm" style="background:#eef1f4;color:#374151" onclick="document.getElementById('import-file-input').click()">⬆ 匯入</button>
+        <input type="file" id="import-file-input" accept="*/*" style="display:none" onchange="importRoute(event)">
+        <label class="btn-sm btn-gpx" title="匯入 GPX">📁 GPX<input type="file" accept=".gpx" onchange="importGPX(event)"></label>
+      </div>
+    </div>
+
+    <div class="tab-panel" id="tab-remote">
+      <button class="btn" id="btn-connect" onclick="connectPhone()" style="background:#eef1f4;color:#374151;width:100%" title="連線 iPhone">🔌 連線手機</button>
+      <button class="btn" id="btn-afk" onclick="toggleAfkMode()" style="background:#eef1f4;color:#374151;width:100%" title="掛機：斷線自動重連並重啟">🌙 掛機模式</button>
+      <button class="btn" id="btn-joystick" onclick="toggleJoystick()" style="background:#eef1f4;color:#374151;width:100%" title="實體搖桿模式">🕹️ 搖桿 <span id="ble-dot" style="color:#9ca3af" title="搖桿未連線">●</span></button>
       <div style="display:flex;gap:4px;margin-top:4px">
         <button id="btn-mode-coarse" onclick="setJoyMode('coarse')"
-          style="flex:1;padding:3px;border:none;border-radius:4px;font-size:0.72rem;cursor:pointer;background:#7c6cd4;color:#fff">粗調</button>
+          style="flex:1;padding:6px;border:none;border-radius:4px;font-size:0.72rem;cursor:pointer;background:#7c6cd4;color:#fff">粗調</button>
         <button id="btn-mode-fine" onclick="setJoyMode('fine')"
-          style="flex:1;padding:3px;border:none;border-radius:4px;font-size:0.72rem;cursor:pointer;background:#444;color:#aaa">微調</button>
+          style="flex:1;padding:6px;border:none;border-radius:4px;font-size:0.72rem;cursor:pointer;background:#eef1f4;color:#6b7280">微調</button>
       </div>
       <div id="coarse-steps" style="display:flex;gap:3px;margin-top:3px">
-        <span style="font-size:0.65rem;color:#888;align-self:center">跳距：</span>
-        <button onclick="setJoyStep(50)"  id="btn-step-50"  style="flex:1;padding:2px;border:none;border-radius:4px;font-size:0.68rem;cursor:pointer;background:#444;color:#aaa">50m</button>
-        <button onclick="setJoyStep(100)" id="btn-step-100" style="flex:1;padding:2px;border:none;border-radius:4px;font-size:0.68rem;cursor:pointer;background:#7c6cd4;color:#fff">100m</button>
-        <button onclick="setJoyStep(200)" id="btn-step-200" style="flex:1;padding:2px;border:none;border-radius:4px;font-size:0.68rem;cursor:pointer;background:#444;color:#aaa">200m</button>
-        <button onclick="setJoyStep(500)" id="btn-step-500" style="flex:1;padding:2px;border:none;border-radius:4px;font-size:0.68rem;cursor:pointer;background:#444;color:#aaa">500m</button>
+        <span style="font-size:0.65rem;color:#6b7280;align-self:center">跳距：</span>
+        <button onclick="setJoyStep(50)"  id="btn-step-50"  style="flex:1;padding:4px;border:none;border-radius:4px;font-size:0.68rem;cursor:pointer;background:#eef1f4;color:#6b7280">50m</button>
+        <button onclick="setJoyStep(100)" id="btn-step-100" style="flex:1;padding:4px;border:none;border-radius:4px;font-size:0.68rem;cursor:pointer;background:#7c6cd4;color:#fff">100m</button>
+        <button onclick="setJoyStep(200)" id="btn-step-200" style="flex:1;padding:4px;border:none;border-radius:4px;font-size:0.68rem;cursor:pointer;background:#eef1f4;color:#6b7280">200m</button>
+        <button onclick="setJoyStep(500)" id="btn-step-500" style="flex:1;padding:4px;border:none;border-radius:4px;font-size:0.68rem;cursor:pointer;background:#eef1f4;color:#6b7280">500m</button>
       </div>
     </div>
-    <div class="search-wrap">
-      <input type="text" id="search-input" placeholder="🔍 搜尋地點"
-             onkeydown="if(event.key==='Enter')searchPlace()">
-      <button id="btn-search" onclick="searchPlace()">搜尋</button>
-      <div id="search-results"></div>
-    </div>
-  </div>
 
-  <div id="overlay-panel" class="panel-wrap">
-    <button class="panel-toggle" onclick="togglePanel('overlay-content','overlay-arrow')">
-      🗾 疊圖輔助 <span id="overlay-arrow">▸</span>
-    </button>
-    <div id="overlay-content" class="panel-inner collapsed">
-      <div style="font-size:0.62rem;color:#888;margin-bottom:4px">先把地圖移到截圖對應的區域，再上傳</div>
-      <label class="btn-sm" style="background:#4a6a7a;color:#eee;cursor:pointer;text-align:center;width:100%">
+    <div class="tab-panel" id="tab-overlay">
+      <div style="font-size:0.62rem;color:#6b7280;margin-bottom:4px">先把地圖移到截圖對應的區域，再上傳</div>
+      <label class="btn-sm" style="background:#dbe8ff;color:#1d4ed8;cursor:pointer;text-align:center;width:100%">
         📸 上傳遊戲截圖
         <input type="file" id="overlay-file" accept="image/*" style="display:none" onchange="uploadMapImage(event)">
       </label>
       <div id="overlay-controls" style="display:none;width:100%">
         <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">
           <button id="btn-overlay-pick" class="btn-sm" onclick="toggleOverlayPickMode()" style="flex:1">🎯 定位取點</button>
-          <button class="btn-sm" onclick="removeMapOverlay()" style="background:#6a2a2a;color:#eee">🗑 移除</button>
+          <button class="btn-sm" onclick="removeMapOverlay()" style="background:#fde2e2;color:#b91c1c">🗑 移除</button>
         </div>
         <div style="display:flex;align-items:center;gap:6px;margin-top:5px">
-          <span style="font-size:0.63rem;color:#888;white-space:nowrap">透明度</span>
+          <span style="font-size:0.63rem;color:#6b7280;white-space:nowrap">透明度</span>
           <input type="range" id="overlay-opacity" min="10" max="100" value="70" oninput="setOverlayOpacity(this.value)">
         </div>
-        <div style="font-size:0.62rem;color:#666;margin-top:4px">🟡 底部平移　🟢 角點縮放　🔴 右側旋轉</div>
+        <div style="font-size:0.62rem;color:#9ca3af;margin-top:4px">🟡 底部平移　🟢 角點縮放　🔴 右側旋轉</div>
         <input type="hidden" id="overlay-rotation" value="0">
         <input type="hidden" id="overlay-scale" value="100">
       </div>
     </div>
-  </div>
 
-  <div id="route-bar" class="panel-wrap">
-    <button class="panel-toggle" onclick="togglePanel('route-content','route-arrow')">
-      📁 路線管理 <span id="route-arrow">▾</span>
-    </button>
-    <div id="route-content" class="panel-inner">
-      <span class="rl">儲存：</span>
-      <input type="text" id="route-name" placeholder="路線名稱">
-      <button class="btn-sm" id="btn-save" onclick="saveRoute()" disabled>💾 儲存</button>
-      <span class="rl" style="margin-left:6px">載入：</span>
-      <select id="route-select"><option value="">-- 選擇路線 --</option></select>
-      <button class="btn-sm" id="btn-load" onclick="loadRoute()" disabled>📂 載入</button>
-      <button class="btn-sm" id="btn-spots" onclick="openSpotsModal()"
-              style="background:#e879a0;color:#fff" title="載入 pogoskill 熱點座標">🗺️ 熱點</button>
-      <button class="btn-sm" id="btn-del"  onclick="deleteRoute()">🗑</button>
-      <button class="btn-sm" id="btn-export" onclick="exportRoute()" disabled title="加密匯出 .gpsikmin">⬇ 匯出</button>
-      <button class="btn-sm" style="background:#4a6a7a;color:#eee" onclick="document.getElementById('import-file-input').click()">⬆ 匯入</button>
-      <input type="file" id="import-file-input" accept="*/*" style="display:none" onchange="importRoute(event)">
-      <label class="btn-sm btn-gpx" title="匯入 GPX">📁 GPX<input type="file" accept=".gpx" onchange="importGPX(event)"></label>
-    </div>
-  </div>
-
-  <div id="update-panel" class="panel-wrap">
-    <button class="panel-toggle" onclick="togglePanel('update-content','update-arrow')">
-      🔄 軟體更新 <span id="update-arrow">▸</span>
-    </button>
-    <div id="update-content" class="panel-inner collapsed" style="flex-direction:column;align-items:stretch">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-        <span style="font-size:0.65rem;color:#aaa">目前版本：</span>
-        <span id="update-current" style="font-size:0.75rem;color:#7ee8a2;font-weight:bold"></span>
+    <div class="tab-panel" id="tab-update">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:0.65rem;color:#6b7280">目前版本：</span>
+        <span id="update-current" style="font-size:0.75rem;color:#15803d;font-weight:bold"></span>
       </div>
-      <button id="btn-update-check" onclick="checkUpdate()" style="background:#3a6aaa;color:#fff;border:none;border-radius:5px;padding:7px;font-size:0.7rem;cursor:pointer;width:100%;margin-bottom:5px">
+      <button id="btn-update-check" onclick="checkUpdate()" style="background:#5b8dee;color:#fff;border:none;border-radius:5px;padding:8px;font-size:0.7rem;cursor:pointer;width:100%">
         🔍 檢查更新
       </button>
-      <div id="update-result" style="display:none;font-size:0.62rem;color:#ccc;line-height:1.6;margin-bottom:5px;padding:6px;background:#1a2a3a;border-radius:4px"></div>
-      <button id="btn-update-apply" onclick="applyUpdate()" style="display:none;background:#e8a040;color:#1a1a2e;border:none;border-radius:5px;padding:7px;font-size:0.7rem;font-weight:bold;cursor:pointer;width:100%">
+      <div id="update-result" style="display:none;font-size:0.62rem;color:#374151;line-height:1.6;padding:8px;background:#f5f7f9;border-radius:4px"></div>
+      <button id="btn-update-apply" onclick="applyUpdate()" style="display:none;background:#d97706;color:#fff;border:none;border-radius:5px;padding:8px;font-size:0.7rem;font-weight:bold;cursor:pointer;width:100%">
         ⬆ 立即更新
       </button>
-      <div style="font-size:0.52rem;color:#555;margin-top:4px">需要 iPhone USB 連線提供網路</div>
+      <div style="font-size:0.56rem;color:#9ca3af">需要 iPhone USB 連線提供網路</div>
+
+      <div style="margin-top:10px;padding-top:10px;border-top:1px dashed #d8dee6">
+        <div style="font-size:0.65rem;color:#d97706;font-weight:bold;margin-bottom:4px">🧪 實驗性：WiFi 直連（免插線）</div>
+        <div style="font-size:0.56rem;color:#9ca3af;margin-bottom:6px">先用 USB 插著手機、完成連線一次，按下方按鈕開啟手機的 WiFi 同步能力。之後再拔線試試「🔌 連線手機」看能不能不靠 USB 連上（不保證成功，失敗請照舊插線用）</div>
+        <button id="btn-wifisync-enable" onclick="enableWifiSync()" style="background:#d97706;color:#fff;border:none;border-radius:5px;padding:7px;font-size:0.66rem;cursor:pointer;width:100%">
+          🛜 開啟 WiFi 直連（需先插線）
+        </button>
+        <div id="wifisync-result" style="display:none;font-size:0.6rem;color:#374151;line-height:1.5;padding:6px;background:#fef3c7;border-radius:4px;margin-top:5px"></div>
+      </div>
     </div>
   </div>
-
-
 </div>
 
 <div id="info-bar">
@@ -1736,6 +1898,14 @@ function haversineJS(lat1,lng1,lat2,lng2) {
 function togglePanel(contentId, arrowId) {
   const collapsed = document.getElementById(contentId).classList.toggle('collapsed');
   document.getElementById(arrowId).textContent = collapsed ? '▸' : '▾';
+}
+
+// ── Tab 切換 ──
+function switchTab(name) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  document.getElementById('tabbtn-' + name).classList.add('active');
 }
 
 // ── 地圖點選 ──
@@ -1814,7 +1984,7 @@ function flyToSpot(lat, lng, name, type) {
     gotoMarker.bindPopup(
       `<div style="text-align:center;font-size:0.75rem">
         <b>${emoji} ${name}</b><br>
-        <span style="color:#aaa;font-size:0.65rem">${lat.toFixed(5)}, ${lng.toFixed(5)}</span><br>
+        <span style="color:#6b7280;font-size:0.65rem">${lat.toFixed(5)}, ${lng.toFixed(5)}</span><br>
         <div style="display:flex;gap:4px;margin-top:6px;justify-content:center">
           <button onclick="addWaypoint(${lat},${lng});map.closePopup()"
             style="padding:3px 8px;background:#5b8dee;border:none;border-radius:4px;color:#fff;cursor:pointer;font-size:0.7rem">
@@ -1874,7 +2044,7 @@ async function fetchRoute() {
   if (data.error) { document.getElementById('info-text').textContent='❌ '+data.error; return; }
   if (routeLayer) map.removeLayer(routeLayer);
   routeCoords=data.coords; routeDistKm=data.dist_km;
-  routeLayer=L.polyline(routeCoords.map(c=>[c.lat,c.lng]),{color:'#7ee8a2',weight:4,opacity:0.85}).addTo(map);
+  routeLayer=L.polyline(routeCoords.map(c=>[c.lat,c.lng]),{color:'#15803d',weight:4,opacity:0.85}).addTo(map);
   map.fitBounds(routeLayer.getBounds(),{padding:[30,30]});
   updateRouteInfo(); updateUI(); saveRouteState();
 }
@@ -2028,7 +2198,7 @@ function circleConfirmCoord() {
   circlePinMarker = L.marker([lat, lng], {
     icon: L.divIcon({className:'', html:'<div style="font-size:20px;line-height:1">🚶</div>', iconSize:[24,24], iconAnchor:[12,12]})
   }).addTo(map).bindPopup(`繞圈中心<br>${lat.toFixed(5)}, ${lng.toFixed(5)}<br>半徑 ${radius}m`).openPopup();
-  circleRingLayer = L.circle([lat, lng], {radius, color:'#7ee8a2', weight:2, fill:false, dashArray:'6,4'}).addTo(map);
+  circleRingLayer = L.circle([lat, lng], {radius, color:'#15803d', weight:2, fill:false, dashArray:'6,4'}).addTo(map);
   map.panTo([lat, lng]);
 
   circleConfirmed = true;
@@ -2346,12 +2516,12 @@ async function autoReconnect() {
       }
     } else {
       btn.textContent = '🔌 連線手機'; btn.disabled = false;
-      btn.style.background = '#4a4a6a'; btn.style.color = '#ccc';
+      btn.style.background = '#e5e8ee'; btn.style.color = '#374151';
       document.getElementById('info-text').textContent = '❌ 重連失敗：' + data.message + '，請手動重連';
     }
   } catch {
     btn.textContent = '🔌 連線手機'; btn.disabled = false;
-    btn.style.background = '#4a4a6a'; btn.style.color = '#ccc';
+    btn.style.background = '#e5e8ee'; btn.style.color = '#374151';
     document.getElementById('info-text').textContent = '❌ 重連異常，請手動重連';
   }
 }
@@ -2364,7 +2534,7 @@ async function connectPhone() {
     const st = await (await fetch('/api/setup/state')).json();
     if (st.status !== 'ready') {
       btn.textContent='🔌 連線手機'; btn.disabled=false;
-      btn.style.background='#4a4a6a'; btn.style.color='#ccc';
+      btn.style.background='#e5e8ee'; btn.style.color='#374151';
       openSetupWizard(st);
       return;
     }
@@ -2389,11 +2559,11 @@ async function doConnectPhone() {
       btn.textContent='🔌 連線手機'; btn.disabled=false;
       btn.style.background='#e87e7e'; btn.style.color='#fff';
       document.getElementById('info-text').textContent='❌ '+data.message;
-      setTimeout(()=>{btn.style.background='#4a4a6a';btn.style.color='#ccc';},3000);
+      setTimeout(()=>{btn.style.background='#e5e8ee';btn.style.color='#374151';},3000);
     }
   } catch(e){
     btn.textContent='🔌 連線手機'; btn.disabled=false;
-    btn.style.background='#4a4a6a'; btn.style.color='#ccc';
+    btn.style.background='#e5e8ee'; btn.style.color='#374151';
   }
 }
 
@@ -2524,7 +2694,7 @@ async function searchPlace() {
   try {
     const res=await fetch('/geocode?q='+encodeURIComponent(q));
     const results=await res.json();
-    if (!results.length||results.error) { box.innerHTML='<div style="color:#888">找不到結果</div>'; return; }
+    if (!results.length||results.error) { box.innerHTML='<div style="color:#6b7280">找不到結果</div>'; return; }
     results.forEach(r=>{
       const div=document.createElement('div');
       div.textContent=r.name;
@@ -2567,7 +2737,7 @@ async function loadRoute() {
   if (data.route_coords&&data.route_coords.length>=2) {
     routeCoords=data.route_coords; routeDistKm=data.dist_km||0;
     if (routeLayer) map.removeLayer(routeLayer);
-    routeLayer=L.polyline(routeCoords.map(c=>[c.lat,c.lng]),{color:'#7ee8a2',weight:4,opacity:0.85}).addTo(map);
+    routeLayer=L.polyline(routeCoords.map(c=>[c.lat,c.lng]),{color:'#15803d',weight:4,opacity:0.85}).addTo(map);
     map.fitBounds(routeLayer.getBounds(),{padding:[30,30]});
   }
   updateRouteInfo(); updateUI(); saveRouteState();
@@ -2605,10 +2775,10 @@ let joystickRunning = false;
 
 async function setJoyMode(m) {
   await fetch('/api/joystick/mode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:m})});
-  document.getElementById('btn-mode-coarse').style.background = m==='coarse'?'#7c6cd4':'#444';
-  document.getElementById('btn-mode-coarse').style.color = m==='coarse'?'#fff':'#aaa';
-  document.getElementById('btn-mode-fine').style.background = m==='fine'?'#7c6cd4':'#444';
-  document.getElementById('btn-mode-fine').style.color = m==='fine'?'#fff':'#aaa';
+  document.getElementById('btn-mode-coarse').style.background = m==='coarse'?'#7c6cd4':'#eef1f4';
+  document.getElementById('btn-mode-coarse').style.color = m==='coarse'?'#fff':'#6b7280';
+  document.getElementById('btn-mode-fine').style.background = m==='fine'?'#7c6cd4':'#eef1f4';
+  document.getElementById('btn-mode-fine').style.color = m==='fine'?'#fff':'#6b7280';
   document.getElementById('coarse-steps').style.display = m==='coarse'?'flex':'none';
 }
 
@@ -2616,8 +2786,8 @@ async function setJoyStep(s) {
   await fetch('/api/joystick/mode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({step_m:s})});
   [50,100,200,500].forEach(v=>{
     const b=document.getElementById('btn-step-'+v);
-    b.style.background=v===s?'#7c6cd4':'#444';
-    b.style.color=v===s?'#fff':'#aaa';
+    b.style.background=v===s?'#7c6cd4':'#eef1f4';
+    b.style.color=v===s?'#fff':'#6b7280';
   });
 }
 
@@ -2625,8 +2795,8 @@ function toggleJoystick() {
   if (joystickRunning) {
     fetch('/stop',{method:'POST'});
     joystickRunning=false;
-    document.getElementById('btn-joystick').style.background='#4a4a6a';
-    document.getElementById('btn-joystick').style.color='#ccc';
+    document.getElementById('btn-joystick').style.background='#e5e8ee';
+    document.getElementById('btn-joystick').style.color='#374151';
   } else {
     if (!posMarker) {
       const c=map.getCenter();
@@ -2642,10 +2812,10 @@ function toggleJoystick() {
 
 setInterval(async()=>{
   const dot=document.getElementById('ble-dot');
-  if (!joystickRunning) { dot.style.color='#555'; return; }
+  if (!joystickRunning) { dot.style.color='#9ca3af'; return; }
   const s=await (await fetch('/status')).json();
   const age=Date.now()-(s.last_joystick_ms||0);
-  dot.style.color=age<4000?'#7ee8a2':'#555';
+  dot.style.color=age<4000?'#15803d':'#9ca3af';
 },2000);
 
 // ── GPX 匯入 ──
@@ -2665,7 +2835,7 @@ function importGPX(event) {
       loadingRoute=true; idxs.forEach(i=>addWaypoint(coords[i].lat,coords[i].lng)); loadingRoute=false;
       routeCoords=coords; routeDistKm=Math.round(dist/100)/10;
       if(routeLayer) map.removeLayer(routeLayer);
-      routeLayer=L.polyline(coords.map(c=>[c.lat,c.lng]),{color:'#7ee8a2',weight:4,opacity:0.85}).addTo(map);
+      routeLayer=L.polyline(coords.map(c=>[c.lat,c.lng]),{color:'#15803d',weight:4,opacity:0.85}).addTo(map);
       map.fitBounds(routeLayer.getBounds(),{padding:[30,30]}); updateRouteInfo(); updateUI(); saveRouteState();
     } else if (wpts.length>=2) {
       clearAll(); wpts.forEach(p=>addWaypoint(+p.getAttribute('lat'),+p.getAttribute('lon')));
@@ -2684,27 +2854,83 @@ function importGPX(event) {
   } catch(_){}
 })();
 
+// ── 電量顯示（自帶電源版本才會顯示，其他機器 present:false 直接隱藏）──
+async function updateBattery(){
+  const badge=document.getElementById('battery-badge');
+  try {
+    const b=await(await fetch('/api/battery')).json();
+    if (!b.present) { badge.style.display='none'; return; }
+    const icon = b.state==='charging' ? '⚡' : '🔋';
+    const color = b.percent<20 ? '#dc2626' : (b.percent<50 ? '#d97706' : '#15803d');
+    const bg = b.percent<20 ? '#fee2e2' : (b.percent<50 ? '#fef3c7' : '#dcfce7');
+    badge.style.display='flex';
+    badge.style.color=color;
+    badge.style.background=bg;
+    badge.title=`${b.voltage}V / ${b.current_ma}mA`;
+    badge.textContent=`${icon} ${b.percent}%`;
+  } catch(_){ badge.style.display='none'; }
+}
+updateBattery();
+setInterval(updateBattery, 10000);
+
+// ── 實驗性：WiFi 直連測試 ──
+async function enableWifiSync(){
+  const btn=document.getElementById('btn-wifisync-enable');
+  const res=document.getElementById('wifisync-result');
+  btn.disabled=true; btn.textContent='⏳ 設定中...';
+  res.style.display='block'; res.textContent='執行中，請確認手機已解鎖且插著 USB…';
+  try {
+    const r=await(await fetch('/api/experimental/wifi_sync_enable',{method:'POST'})).json();
+    if (r.ok) {
+      res.style.background='#dcfce7'; res.style.color='#15803d';
+      res.textContent='✅ 已開啟 WiFi 同步。現在可以試著拔掉 USB 線，再按「🔌 連線手機」測試看看。';
+    } else {
+      res.style.background='#fee2e2'; res.style.color='#dc2626';
+      res.textContent='❌ 設定失敗：'+(r.output||'未知錯誤')+'（請確認手機已用 USB 連線且螢幕解鎖）';
+    }
+  } catch(e) {
+    res.style.background='#fee2e2'; res.style.color='#dc2626';
+    res.textContent='❌ 連線錯誤：'+e;
+  }
+  btn.disabled=false; btn.textContent='🛜 開啟 WiFi 直連（需先插線）';
+}
+
+const OTA_URL='https://gpsikmin2026.github.io/update/version.json';
+let _otaInfo=null;   // 手機中繼模式下暫存的遠端版本資訊
+function _verNum(v){ return String(v).split('.').map(x=>parseInt(x,10)||0); }
+function _verGt(a,b){ a=_verNum(a); b=_verNum(b); for(let i=0;i<Math.max(a.length,b.length);i++){ const d=(a[i]||0)-(b[i]||0); if(d) return d>0; } return false; }
+
 async function checkUpdate(){
   const btn=document.getElementById('btn-update-check');
   const res=document.getElementById('update-result');
   const applyBtn=document.getElementById('btn-update-apply');
   btn.disabled=true; btn.textContent='🔍 檢查中...';
-  res.style.display='none'; applyBtn.style.display='none';
+  res.style.display='none'; applyBtn.style.display='none'; _otaInfo=null;
   try {
-    const r=await(await fetch('/api/update/check')).json();
+    let r=null;
+    try { r=await(await fetch('/api/update/check')).json(); }
+    catch(e){ res.innerHTML='<span style="color:#e85050">❌ 無法連線到盒子</span>'; res.style.display='block'; throw e; }
+    if(r.offline){
+      // 盒子沒網路（自己是 AP）→ 由手機瀏覽器去抓版本資訊（手機用行動網路）
+      try {
+        const info=await(await fetch(OTA_URL,{cache:'no-store'})).json();
+        _otaInfo=info;
+        r={current:r.current, latest:info.version, changelog:info.changelog||'', has_update:_verGt(info.version,r.current)};
+      } catch(e){
+        res.innerHTML='<span style="color:#e85050">❌ 手機也連不上更新伺服器<br>請確認手機已開啟「行動數據」（手機連著盒子 Wi-Fi 時，網路會走行動數據）</span>';
+        res.style.display='block'; throw e;
+      }
+    }
     if(r.error){ res.innerHTML='<span style="color:#e85050">❌ '+r.error+'</span>'; }
     else if(r.has_update){
       res.innerHTML='<b style="color:#e8a040">🆕 有新版本 v'+r.latest+'</b><br>'+
-        (r.changelog?'<span style="color:#999">'+r.changelog+'</span>':'');
+        (r.changelog?'<span style="color:#6b7280">'+r.changelog+'</span>':'');
       applyBtn.style.display='';
     } else {
-      res.innerHTML='<span style="color:#7ee8a2">✅ 已是最新版本 v'+r.current+'</span>';
+      res.innerHTML='<span style="color:#15803d">✅ 已是最新版本 v'+r.current+'</span>';
     }
     res.style.display='block';
-  } catch(e){
-    res.innerHTML='<span style="color:#e85050">❌ 連線失敗，請確認 iPhone 已插上</span>';
-    res.style.display='block';
-  }
+  } catch(e){}
   btn.disabled=false; btn.textContent='🔍 檢查更新';
 }
 
@@ -2714,14 +2940,28 @@ async function applyUpdate(){
   const res=document.getElementById('update-result');
   btn.disabled=true; btn.textContent='⬆ 更新中...';
   try {
-    const r=await(await fetch('/api/update/apply',{method:'POST'})).json();
+    let r;
+    if(_otaInfo){
+      // 手機中繼：手機下載更新包 → 上傳盒子（盒子離線驗 ed25519 簽章，不信任手機）
+      res.innerHTML='<span style="color:#6b7280">⬇ 手機下載更新包中...</span>';
+      const fr=await fetch(_otaInfo.url,{cache:'no-store'});
+      if(!fr.ok) throw new Error('下載失敗 HTTP '+fr.status);
+      const buf=await fr.arrayBuffer();
+      res.innerHTML='<span style="color:#6b7280">⬆ 上傳到盒子並驗證中...</span>';
+      r=await(await fetch('/api/update/upload',{method:'POST',
+        headers:{'Content-Type':'application/octet-stream','X-OTA-Version':_otaInfo.version,
+                 'X-OTA-Sha256':_otaInfo.sha256||'','X-OTA-Sig':_otaInfo.sig||''},
+        body:buf})).json();
+    } else {
+      r=await(await fetch('/api/update/apply',{method:'POST'})).json();
+    }
     if(r.error){
       res.innerHTML='<span style="color:#e85050">❌ '+r.error+'</span>';
       btn.disabled=false; btn.textContent='⬆ 立即更新';
     } else {
-      res.innerHTML='<span style="color:#7ee8a2">✅ '+r.message+'</span>';
+      res.innerHTML='<span style="color:#15803d">✅ '+r.message+'</span>';
       btn.style.display='none';
-      setTimeout(()=>{ res.innerHTML='<span style="color:#aaa">🔄 重新載入頁面中...</span>'; },2000);
+      setTimeout(()=>{ res.innerHTML='<span style="color:#6b7280">🔄 重新載入頁面中...</span>'; },2000);
       setTimeout(()=>{ location.reload(); },6000);
     }
   } catch(e){
@@ -2769,7 +3009,7 @@ function showMarkerForm(lat, lng, type) {
   // 名稱輸入
   const input = document.createElement('input');
   input.type = 'text'; input.placeholder = '標記名稱（可空白）';
-  input.style.cssText = 'background:#2a2a4e;border:1px solid #3a3a6e;color:#eee;border-radius:5px;padding:5px 8px;font-size:0.85rem;width:100%';
+  input.style.cssText = 'background:#eef1f4;border:1px solid #d8dee6;color:#1f2430;border-radius:5px;padding:5px 8px;font-size:0.85rem;width:100%';
   form.appendChild(input);
 
   // 按鈕列
@@ -2777,7 +3017,7 @@ function showMarkerForm(lat, lng, type) {
   const ok = document.createElement('button'); ok.textContent = '確定';
   ok.style.cssText = 'flex:1;background:#7ee8a2;color:#1a1a2e;border:none;border-radius:5px;padding:5px;cursor:pointer;font-weight:bold;font-size:0.85rem';
   const cancel = document.createElement('button'); cancel.textContent = '取消';
-  cancel.style.cssText = 'flex:1;background:#4a4a6a;color:#ccc;border:none;border-radius:5px;padding:5px;cursor:pointer;font-size:0.85rem';
+  cancel.style.cssText = 'flex:1;background:#e5e8ee;color:#374151;border:none;border-radius:5px;padding:5px;cursor:pointer;font-size:0.85rem';
   btnRow.append(ok, cancel); form.appendChild(btnRow);
 
   L.popup({closeButton:false, maxWidth:240}).setLatLng([lat,lng]).setContent(form).openOn(map);
@@ -2850,7 +3090,7 @@ async function restoreRouteState() {
   loadingRoute=false;
   routeCoords=saved.routeCoords; routeDistKm=saved.routeDistKm||0;
   if (routeLayer) map.removeLayer(routeLayer);
-  routeLayer=L.polyline(routeCoords.map(c=>[c.lat,c.lng]),{color:'#7ee8a2',weight:4,opacity:0.85}).addTo(map);
+  routeLayer=L.polyline(routeCoords.map(c=>[c.lat,c.lng]),{color:'#15803d',weight:4,opacity:0.85}).addTo(map);
   map.fitBounds(routeLayer.getBounds(),{padding:[30,30]});
   if (saved.loop!=null) document.getElementById('loop').checked=saved.loop;
   if (saved.straight!=null) document.getElementById('straight').checked=saved.straight;
@@ -2983,12 +3223,12 @@ function renderPickList(filter) {
   const container = document.getElementById('pm-list');
   container.innerHTML = '';
   if (!list.length) {
-    container.innerHTML = '<div style="color:#888;text-align:center;padding:20px;font-size:0.72rem">尚無標記</div>';
+    container.innerHTML = '<div style="color:#6b7280;text-align:center;padding:20px;font-size:0.72rem">尚無標記</div>';
     return;
   }
   list.forEach(entry => {
     const row = document.createElement('label');
-    row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:7px 10px;font-size:0.68rem;border-bottom:1px solid #1a2240;cursor:pointer';
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:7px 10px;font-size:0.68rem;border-bottom:1px solid #eef0f3;cursor:pointer';
     const cb = document.createElement('input');
     cb.type = 'checkbox'; cb.style.flexShrink = '0';
     cb.addEventListener('change', () => {
@@ -3015,10 +3255,10 @@ function renderPickList(filter) {
     nameSpan.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
     nameSpan.textContent = emoji + ' ' + entry.name;
     const distSpan = document.createElement('span');
-    distSpan.style.cssText = 'color:#7eb8f7;font-size:0.6rem;flex-shrink:0';
+    distSpan.style.cssText = 'color:#2563eb;font-size:0.6rem;flex-shrink:0';
     distSpan.textContent = distStr;
     row.append(cb, nameSpan, distSpan);
-    row.onmouseover = () => row.style.background = '#2a3a6e';
+    row.onmouseover = () => row.style.background = '#eef4ff';
     row.onmouseout  = () => row.style.background = '';
     row._entry = entry;
     row._cb = cb;
@@ -3063,12 +3303,12 @@ function renderMarkersList(filter) {
   const container = document.getElementById('mm-list');
   container.innerHTML = '';
   if (!list.length) {
-    container.innerHTML = '<div style="color:#888;text-align:center;padding:20px;font-size:0.72rem">尚無標記</div>';
+    container.innerHTML = '<div style="color:#6b7280;text-align:center;padding:20px;font-size:0.72rem">尚無標記</div>';
     return;
   }
   list.forEach(entry => {
     const row = document.createElement('div');
-    row.style.cssText = 'padding:7px 10px;cursor:pointer;font-size:0.68rem;border-bottom:1px solid #1a2240;display:flex;align-items:center;gap:6px';
+    row.style.cssText = 'padding:7px 10px;cursor:pointer;font-size:0.68rem;border-bottom:1px solid #eef0f3;display:flex;align-items:center;gap:6px';
     const emoji = MARKER_ICONS[entry.type] || '📍';
     const lat = entry.marker.getLatLng().lat.toFixed(4);
     const lng = entry.marker.getLatLng().lng.toFixed(4);
@@ -3078,7 +3318,7 @@ function renderMarkersList(filter) {
     nameSpan.textContent = emoji + ' ' + entry.name;
 
     const coordSpan = document.createElement('span');
-    coordSpan.style.cssText = 'color:#555;font-size:0.6rem;flex-shrink:0';
+    coordSpan.style.cssText = 'color:#9ca3af;font-size:0.6rem;flex-shrink:0';
     coordSpan.textContent = lat + ',' + lng;
 
     const delBtn = document.createElement('button');
@@ -3094,7 +3334,7 @@ function renderMarkersList(filter) {
 
     row.append(nameSpan, coordSpan, delBtn);
     row.onclick = () => { closeMarkersModal(); flyToSpot(entry.marker.getLatLng().lat, entry.marker.getLatLng().lng, entry.name, entry.type); };
-    row.onmouseover = () => row.style.background = '#2a3a6e';
+    row.onmouseover = () => row.style.background = '#eef4ff';
     row.onmouseout  = () => row.style.background = '';
     container.appendChild(row);
   });
@@ -3115,7 +3355,7 @@ async function openSpotsModal() {
   document.getElementById('spots-overlay').style.display='block';
   document.getElementById('spots-modal').style.display='flex';
   if (!spotsData) {
-    document.getElementById('spots-list').innerHTML='<div style="color:#888;text-align:center;padding:20px;font-size:0.72rem">載入中…</div>';
+    document.getElementById('spots-list').innerHTML='<div style="color:#6b7280;text-align:center;padding:20px;font-size:0.72rem">載入中…</div>';
     try {
       spotsData = await (await fetch('/static/pikmin_spots.json')).json();
     } catch {
@@ -3144,21 +3384,21 @@ function renderSpotsList(filter) {
     const spots = spotsData[cat.key] || [];
     if (!spots.length) return;
     const hdr = document.createElement('div');
-    hdr.style.cssText = 'color:#7ee8a2;font-size:0.65rem;font-weight:bold;padding:5px 10px 3px;position:sticky;top:0;background:#1e2a4e;border-bottom:1px solid #2a2a4e;';
+    hdr.style.cssText = 'color:#15803d;font-size:0.65rem;font-weight:bold;padding:5px 10px 3px;position:sticky;top:0;background:#ffffff;border-bottom:1px solid #e2e6ec;';
     hdr.textContent = cat.label + `（${spots.length}）`;
     container.appendChild(hdr);
     spots.forEach(p => {
       const row = document.createElement('div');
-      row.style.cssText = 'padding:6px 10px;cursor:pointer;font-size:0.68rem;border-bottom:1px solid #1a2240;display:flex;justify-content:space-between;align-items:center;';
-      row.innerHTML = `<span>${p.name}</span><span style="color:#555;font-size:0.6rem">${p.lat.toFixed(3)},${p.lng.toFixed(3)}</span>`;
-      row.onmouseover = () => row.style.background='#2a3a6e';
+      row.style.cssText = 'padding:6px 10px;cursor:pointer;font-size:0.68rem;border-bottom:1px solid #eef0f3;display:flex;justify-content:space-between;align-items:center;';
+      row.innerHTML = `<span>${p.name}</span><span style="color:#9ca3af;font-size:0.6rem">${p.lat.toFixed(3)},${p.lng.toFixed(3)}</span>`;
+      row.onmouseover = () => row.style.background='#eef4ff';
       row.onmouseout  = () => row.style.background='';
       row.onclick = () => { closeSpotsModal(); flyToSpot(p.lat, p.lng, p.name, cat.type); };
       container.appendChild(row);
       count++;
     });
   });
-  if (!count) container.innerHTML='<div style="color:#888;text-align:center;padding:20px;font-size:0.72rem">無資料</div>';
+  if (!count) container.innerHTML='<div style="color:#6b7280;text-align:center;padding:20px;font-size:0.72rem">無資料</div>';
 }
 
 function loadAllSpotsAsMarkers() {
@@ -3382,14 +3622,14 @@ function removeMapOverlay() {
      style="display:none;position:fixed;inset:0;background:#0007;z-index:9998"></div>
 <div id="pickmarkers-modal"
      style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
-            background:#1e2a4e;border:1px solid #3a3a6e;border-radius:10px;padding:14px;
+            background:#ffffff;border:1px solid #d8dee6;border-radius:10px;padding:14px;
             z-index:9999;width:320px;max-height:80vh;box-shadow:0 8px 24px #000c;
             flex-direction:column;gap:8px">
   <div style="display:flex;align-items:center;justify-content:space-between">
-    <span style="color:#7ee8a2;font-weight:bold;font-size:0.8rem">📌 選擇尋菇點</span>
-    <button onclick="closePickMarkersModal()" style="background:none;border:none;color:#888;cursor:pointer;font-size:1rem">✕</button>
+    <span style="color:#15803d;font-weight:bold;font-size:0.8rem">📌 選擇尋菇點</span>
+    <button onclick="closePickMarkersModal()" style="background:none;border:none;color:#6b7280;cursor:pointer;font-size:1rem">✕</button>
   </div>
-  <div style="font-size:0.62rem;color:#888">勾選要加入巡邏的標記，按確定後加為中繼點</div>
+  <div style="font-size:0.62rem;color:#6b7280">勾選要加入巡邏的標記，按確定後加為中繼點</div>
   <div style="display:flex;gap:4px;flex-wrap:wrap">
     <button class="sf-btn sf-active" id="pm-all"     onclick="renderPickList('all')">全部</button>
     <button class="sf-btn" id="pm-mushroom" onclick="renderPickList('mushroom')">🍄 蘑菇</button>
@@ -3398,14 +3638,14 @@ function removeMapOverlay() {
     <button class="sf-btn" id="pm-pin"      onclick="renderPickList('pin')">📍 標記</button>
     <button class="sf-btn" id="pm-sort-btn" onclick="togglePmSort()">📏 距離</button>
   </div>
-  <div id="pm-list" style="overflow-y:auto;max-height:300px;border:1px solid #2a2a4e;border-radius:6px;background:#131d35"></div>
+  <div id="pm-list" style="overflow-y:auto;max-height:300px;border:1px solid #e2e6ec;border-radius:6px;background:#f7f8fa"></div>
   <div style="display:flex;gap:6px">
     <button onclick="confirmPickMarkers()"
             style="flex:1;background:#7ee8a2;color:#1a1a2e;border:none;border-radius:5px;padding:6px;cursor:pointer;font-size:0.65rem;font-weight:bold">
       ✓ 加為中繼點
     </button>
     <button onclick="closePickMarkersModal()"
-            style="flex:1;background:#4a4a6a;color:#ccc;border:none;border-radius:5px;padding:6px;cursor:pointer;font-size:0.65rem">
+            style="flex:1;background:#e5e8ee;color:#374151;border:none;border-radius:5px;padding:6px;cursor:pointer;font-size:0.65rem">
       取消
     </button>
   </div>
@@ -3416,12 +3656,12 @@ function removeMapOverlay() {
      style="display:none;position:fixed;inset:0;background:#0007;z-index:9998"></div>
 <div id="mymarkers-modal"
      style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
-            background:#1e2a4e;border:1px solid #3a3a6e;border-radius:10px;padding:14px;
+            background:#ffffff;border:1px solid #d8dee6;border-radius:10px;padding:14px;
             z-index:9999;width:320px;max-height:80vh;box-shadow:0 8px 24px #000c;
             flex-direction:column;gap:8px">
   <div style="display:flex;align-items:center;justify-content:space-between">
-    <span style="color:#7ee8a2;font-weight:bold;font-size:0.8rem">📋 我的標記</span>
-    <button onclick="closeMarkersModal()" style="background:none;border:none;color:#888;cursor:pointer;font-size:1rem;line-height:1">✕</button>
+    <span style="color:#15803d;font-weight:bold;font-size:0.8rem">📋 我的標記</span>
+    <button onclick="closeMarkersModal()" style="background:none;border:none;color:#6b7280;cursor:pointer;font-size:1rem;line-height:1">✕</button>
   </div>
   <div style="display:flex;gap:4px;flex-wrap:wrap">
     <button id="mm-all"      class="sf-btn sf-active" onclick="renderMarkersList('all')">全部</button>
@@ -3430,9 +3670,9 @@ function removeMapOverlay() {
     <button id="mm-special"  class="sf-btn" onclick="renderMarkersList('special')">⭐ 明信片</button>
     <button id="mm-pin"      class="sf-btn" onclick="renderMarkersList('pin')">📍 標記</button>
   </div>
-  <div id="mm-list" style="overflow-y:auto;max-height:360px;border:1px solid #2a2a4e;border-radius:6px;background:#131d35"></div>
+  <div id="mm-list" style="overflow-y:auto;max-height:360px;border:1px solid #e2e6ec;border-radius:6px;background:#f7f8fa"></div>
   <button onclick="closeMarkersModal()"
-          style="background:#4a4a6a;color:#ccc;border:none;border-radius:5px;padding:6px;cursor:pointer;font-size:0.65rem;width:100%">
+          style="background:#e5e8ee;color:#374151;border:none;border-radius:5px;padding:6px;cursor:pointer;font-size:0.65rem;width:100%">
     關閉
   </button>
 </div>
@@ -3442,12 +3682,12 @@ function removeMapOverlay() {
      style="display:none;position:fixed;inset:0;background:#0007;z-index:9998"></div>
 <div id="spots-modal"
      style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
-            background:#1e2a4e;border:1px solid #3a3a6e;border-radius:10px;padding:14px;
+            background:#ffffff;border:1px solid #d8dee6;border-radius:10px;padding:14px;
             z-index:9999;width:320px;max-height:80vh;box-shadow:0 8px 24px #000c;
             flex-direction:column;gap:8px">
   <div style="display:flex;align-items:center;justify-content:space-between">
-    <span style="color:#7ee8a2;font-weight:bold;font-size:0.8rem">🗺️ 遊戲熱點</span>
-    <button onclick="closeSpotsModal()" style="background:none;border:none;color:#888;cursor:pointer;font-size:1rem;line-height:1">✕</button>
+    <span style="color:#15803d;font-weight:bold;font-size:0.8rem">🗺️ 遊戲熱點</span>
+    <button onclick="closeSpotsModal()" style="background:none;border:none;color:#6b7280;cursor:pointer;font-size:1rem;line-height:1">✕</button>
   </div>
   <div style="display:flex;gap:4px;flex-wrap:wrap">
     <button id="sf-all"        class="sf-btn sf-active" onclick="renderSpotsList('all')">全部</button>
@@ -3456,14 +3696,14 @@ function removeMapOverlay() {
     <button id="sf-postcards"  class="sf-btn" onclick="renderSpotsList('postcards')">⭐ 明信片</button>
     <button id="sf-taiwan_poi" class="sf-btn" onclick="renderSpotsList('taiwan_poi')">📍 台灣</button>
   </div>
-  <div id="spots-list" style="overflow-y:auto;max-height:340px;border:1px solid #2a2a4e;border-radius:6px;background:#131d35"></div>
-  <div style="display:flex;gap:6px;padding-top:4px;border-top:1px solid #2a2a4e">
+  <div id="spots-list" style="overflow-y:auto;max-height:340px;border:1px solid #e2e6ec;border-radius:6px;background:#f7f8fa"></div>
+  <div style="display:flex;gap:6px;padding-top:4px;border-top:1px solid #e2e6ec">
     <button onclick="loadAllSpotsAsMarkers()"
             style="flex:1;background:#e879a0;color:#fff;border:none;border-radius:5px;padding:6px;cursor:pointer;font-size:0.65rem;font-weight:bold">
       📌 全部載入為標記
     </button>
     <button onclick="closeSpotsModal()"
-            style="flex:1;background:#4a4a6a;color:#ccc;border:none;border-radius:5px;padding:6px;cursor:pointer;font-size:0.65rem">
+            style="flex:1;background:#e5e8ee;color:#374151;border:none;border-radius:5px;padding:6px;cursor:pointer;font-size:0.65rem">
       關閉
     </button>
   </div>
@@ -3729,7 +3969,7 @@ function removeMapOverlay() {
   background:rgba(0,0,0,0.9);z-index:9999;align-items:center;justify-content:center;flex-direction:column;gap:14px">
   <div style="font-size:4rem">🪣</div>
   <div id="goldpot-title" style="font-size:1.8rem;color:#FFD700;font-weight:bold;text-align:center;padding:0 20px">凍結GPS中，準備互動</div>
-  <div id="goldpot-sub" style="color:#aaa;font-size:0.95rem;text-align:center;padding:0 20px">切換到 Pikmin Bloom，倒數結束後立刻互動金盆</div>
+  <div id="goldpot-sub" style="color:#6b7280;font-size:0.95rem;text-align:center;padding:0 20px">切換到 Pikmin Bloom，倒數結束後立刻互動金盆</div>
   <div id="goldpot-timer" style="font-size:4rem;color:#fff;font-weight:bold;min-width:60px;text-align:center"></div>
   <button onclick="document.getElementById('goldpot-overlay').style.display='none'"
     style="padding:10px 28px;font-size:1rem;background:#555;color:#fff;border:none;border-radius:8px;cursor:pointer;margin-top:8px">
