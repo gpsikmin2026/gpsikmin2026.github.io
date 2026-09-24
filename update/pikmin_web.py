@@ -3,7 +3,7 @@
 GPsikmin Web UI
 執行：python3 pikmin_web.py
 """
-VERSION = "1.5.12"
+VERSION = "1.5.14"
 
 import asyncio
 import fcntl
@@ -857,11 +857,10 @@ def _ota_install(code):
 
     if _is_overlayroot():
         real_path = _SELF_PATH.replace("/home/", "/media/root-ro/home/", 1)
-        overlay_path = _SELF_PATH.replace("/home/", "/media/root-rw/overlay/home/", 1)
-        # ① 先更新 overlay + merged view（root-rw 永遠可寫、免 remount）→ 當前 process 與重啟後立即讀到新版。
-        #    先做這步：即使後面 root-ro 同步失敗，盒子仍跑新版、不會卡在半套狀態。
-        subprocess.run(["sudo", "bash", "-c", f"mkdir -p {os.path.dirname(overlay_path)} && cp {tmp_path} {overlay_path}"], check=True, timeout=10)
-        # 用 cat 就地覆寫（O_TRUNC），避免 cp 在 overlayfs 觸發 whiteout ENOTEMPTY（"Directory not empty"）
+        # ① 先只透過 overlay 合併視圖就地覆寫（O_TRUNC；overlayfs 會自己 copy-up 到 upper）→ 當前系統與重啟後立即讀到新版。
+        #    ⚠ 絕不可繞過 overlayfs 直接寫 /media/root-rw/overlay/...（upper 層）：開機後首次更新會讓之後
+        #    合併視圖的寫入回 "Directory not empty"(ENOTEMPTY)，整個更新失敗（v1.5.11/1.5.12 實機踩到）。
+        #    也不能用 cp 覆蓋（會觸發 whiteout ENOTEMPTY）。先做這步：即使後面 root-ro 同步失敗，盒子仍跑新版。
         subprocess.run(["sudo", "bash", "-c", f"cat {tmp_path} > {_SELF_PATH} && sync"], check=True, timeout=10)
         # ② 再同步 root-ro（重開機持久層）。remount rw 後「無論成敗都要 remount 回 ro」，
         #    否則 remount,ro 若丟 EBUSY（盒子上常見）會把 root-ro 留在可寫狀態，防斷電保護失效到重開機。
@@ -918,7 +917,7 @@ def api_update_apply():
                          "message": "更新完成，3 秒後自動重啟..."})
     except requests.RequestException as e:
         return jsonify({"error": f"盒子無法上網：{e}", "offline": True}), 502
-    except subprocess.CalledProcessError as e:
+    except (subprocess.SubprocessError, OSError) as e:
         return jsonify({"error": f"寫入失敗：{e}"}), 500
     except Exception as e:
         return jsonify({"error": f"更新失敗：{e}"}), 500
@@ -937,7 +936,7 @@ def api_update_upload():
         return jsonify({"error": err}), 400
     try:
         _ota_install(code)
-    except subprocess.CalledProcessError as e:
+    except (subprocess.SubprocessError, OSError) as e:
         return jsonify({"error": f"寫入失敗：{e}"}), 500
     return jsonify({"ok": True, "new_version": version,
                      "message": "更新完成，3 秒後自動重啟..."})
