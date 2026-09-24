@@ -3,7 +3,7 @@
 GPsikmin Web UI
 執行：python3 pikmin_web.py
 """
-VERSION = "1.5.20"
+VERSION = "1.5.21"
 
 import asyncio
 import fcntl
@@ -1513,7 +1513,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; b
 .tab-btn { flex: 1; background: none; border: none; padding: 8px 4px; font-size: 0.62rem; color: var(--c-6b7280); cursor: pointer; white-space: nowrap; border-bottom: 2px solid transparent; touch-action: manipulation; }
 .tab-btn.active { color: var(--c-15803d); border-bottom-color: var(--c-15803d); font-weight: 700; background: var(--c-f3faf5); }
 
-#tab-panels { flex: 1; overflow-y: auto; }
+#tab-panels { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
 .tab-panel { display: none; flex-direction: column; gap: 8px; padding: 10px 12px; }
 .tab-panel.active { display: flex; }
 
@@ -1831,7 +1831,6 @@ input[type=time] { background: var(--c-f5f7f9); border: 1px solid var(--c-d8dee6
           <span id="circle-radius-val">20m</span>
         </div>
       </div>
-    </div>
     </div>
 
     <div class="tab-panel" id="tab-marks">
