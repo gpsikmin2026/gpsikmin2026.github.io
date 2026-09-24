@@ -3,7 +3,7 @@
 GPsikmin Web UI
 執行：python3 pikmin_web.py
 """
-VERSION = "1.5.11"
+VERSION = "1.5.12"
 
 import asyncio
 import fcntl
@@ -943,11 +943,17 @@ def api_update_upload():
                      "message": "更新完成，3 秒後自動重啟..."})
 
 def _delayed_restart():
+    """更新後重啟自己。盒子 sudoers 只放行 bash/python3/pkill/kill（沒有 systemctl），
+    直接 `sudo systemctl` 會因要密碼而靜默失敗（v1.5.11 實機踩到）→ 一律包在 `sudo bash -c` 裡；
+    仍失敗就 kill -9 自己，讓 systemd 的 Restart=on-failure 5 秒後拉起新版。"""
     time.sleep(3)
     for svc in ("gpsikmin", "GPsikmin"):
         r = subprocess.run(["systemctl", "is-active", svc], capture_output=True, text=True)
         if r.stdout.strip() == "active":
-            subprocess.run(["sudo", "systemctl", "restart", svc], timeout=10)
+            rc = subprocess.run(["sudo", "-n", "bash", "-c", f"systemctl --no-block restart {svc}"], timeout=10).returncode
+            if rc != 0:
+                print(f"[OTA] systemctl restart {svc} 失敗 rc={rc}，改用 kill -9 讓 systemd 重拉", flush=True)
+                subprocess.run(["sudo", "-n", "kill", "-9", str(os.getpid())])
             return
 
 _I2C_SLAVE = 0x0703
