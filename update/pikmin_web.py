@@ -3,7 +3,7 @@
 GPsikmin Web UI
 執行：python3 pikmin_web.py
 """
-VERSION = "1.5.19"
+VERSION = "1.5.20"
 
 import asyncio
 import fcntl
@@ -1474,6 +1474,20 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; b
 .mini-row { display: flex; gap: 6px; }
 .mini-row .big-btn { flex: 1; padding: 6px; font-size: 0.68rem; }
 #btn-undo, #btn-clear { background: var(--c-eef1f4); color: var(--c-374151); }
+/* 模式單選（一般/尋菇/瞬移/繞圈）與藥丸開關（折返/直線/跟隨） */
+.seg { display: flex; border: 1px solid var(--c-d8dee6); border-radius: 8px; overflow: hidden; background: var(--c-f5f7f9); }
+.seg button { flex: 1; border: none; border-right: 1px solid var(--c-d8dee6); background: transparent; padding: 8px 2px; font-size: 0.7rem; color: var(--c-4b5563); cursor: pointer; white-space: nowrap; touch-action: manipulation; }
+.seg button:last-child { border-right: none; }
+.seg button.active { background: var(--c-f3faf5); color: var(--c-15803d); font-weight: 700; box-shadow: inset 0 -2px 0 var(--c-15803d); }
+.chip-row { display: flex; gap: 6px; }
+.chip { flex: 1; position: relative; cursor: pointer; }
+.chip input { position: absolute; opacity: 0; pointer-events: none; }
+.chip span { display: block; text-align: center; padding: 6px 4px; border: 1px solid var(--c-d8dee6); border-radius: 16px; font-size: 0.68rem; background: var(--c-f5f7f9); color: var(--c-4b5563); user-select: none; }
+.chip input:checked + span { background: var(--c-f3faf5); border-color: var(--c-15803d); color: var(--c-15803d); font-weight: 700; }
+.chip input:checked + span::before { content: '✓ '; }
+.chip input:focus-visible + span { outline: 2px solid var(--c-2563eb); outline-offset: 1px; }
+/* 執行中（手機）：側欄收合成只剩停止/臨停，地圖變大；⚙️ 設定 可再展開 */
+#btn-run-settings { display: none; }
 /* 路線分頁：檔案操作用等寬格線，避免大小參差 */
 .route-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .route-grid .btn-sm { width: 100%; box-sizing: border-box; min-height: 34px; display: flex; align-items: center; justify-content: center; margin: 0; padding: 6px 4px; }
@@ -1519,12 +1533,8 @@ input[type=checkbox] { accent-color: #15803d; width: 15px; height: 15px; }
 .btn-mtype.active { border-color:#f59e0b; background:var(--c-fff7e6); }
 
 /* 搜尋框 */
-.search-wrap { position: relative; display: flex; align-items: center; gap: 4px; width: 100%; }
-#search-input { background: var(--c-f5f7f9); border: 1px solid var(--c-d8dee6); color: var(--c-1f2430); border-radius: 5px; padding: 4px 7px; font-size: 0.64rem; flex: 1; min-width: 0; }
-#search-input::placeholder { color: var(--c-9ca3af); }
-#btn-search { background: #5b8dee; color: #fff; border: none; border-radius: 5px; padding: 4px 8px; cursor: pointer; font-size: 0.64rem; font-weight: bold; flex-shrink: 0; }
-#search-results { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: var(--c-ffffff); border: 1px solid var(--c-d8dee6); border-radius: 6px; z-index: 9999; max-height: 210px; overflow-y: auto; display: none; box-shadow: 0 6px 18px rgba(20,30,50,.12); }
-#search-results div { padding: 6px 9px; cursor: pointer; font-size: 0.64rem; border-bottom: 1px solid var(--c-eef1f4); line-height: 1.3; }
+#search-results { position: absolute; bottom: calc(100% + 6px); left: 0; right: 0; background: var(--c-ffffff); border: 1px solid var(--c-d8dee6); border-radius: 6px; z-index: 9999; max-height: 210px; overflow-y: auto; display: none; box-shadow: 0 6px 18px rgba(20,30,50,.12); }
+#goto-box #search-results div, #search-results div { padding: 6px 9px; cursor: pointer; font-size: 0.64rem; border-bottom: 1px solid var(--c-eef1f4); line-height: 1.3; }
 #search-results div:hover { background: var(--c-f3f6f9); }
 #search-results div:last-child { border-bottom: none; }
 
@@ -1590,6 +1600,10 @@ input[type=time] { background: var(--c-f5f7f9); border: 1px solid var(--c-d8dee6
   button { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
   .big-btn { font-size: 0.95rem !important; padding: 12px !important; }
   .mini-row .big-btn { font-size: 0.8rem !important; padding: 9px !important; }
+  .seg button { font-size: 0.86rem; padding: 11px 2px; }
+  .chip span { font-size: 0.82rem; padding: 9px 4px; }
+  body.sim-running #btn-run-settings { display: inline-block; }
+  body.sim-running:not(.run-open) #tab-bar, body.sim-running:not(.run-open) #tab-panels { display: none; }
   .pin-row .big-btn { font-size: 0.82rem !important; padding: 8px 4px !important; }
   .pin-row .big-btn.icon { flex: 0 0 46px !important; font-size: 1rem !important; padding: 8px 0 !important; }
   .pin-row.main .big-btn { font-size: 0.95rem !important; padding: 11px 4px !important; }
@@ -1617,15 +1631,13 @@ input[type=time] { background: var(--c-f5f7f9); border: 1px solid var(--c-d8dee6
   #mushroom-dwell-row input, #flower-settings input, #circle-settings input { padding: 6px 8px !important; }
   #mushroom-dwell-row button, #flower-settings button, #circle-settings button { padding: 9px 10px !important; }
 
-  #search-input { font-size: 0.84rem !important; padding: 9px 10px !important; }
-  #btn-search { font-size: 0.84rem !important; padding: 9px 12px !important; }
 
   #route-name { font-size: 0.84rem !important; padding: 8px 8px !important; }
   #route-select { font-size: 0.84rem !important; padding: 8px 8px !important; }
   input[type=time] { font-size: 0.84rem !important; padding: 8px 6px !important; }
   .sf-btn { font-size: 0.84rem !important; padding: 9px 12px !important; }
 
-  #goto-box input { font-size: 0.84rem !important; padding: 8px 32px 8px 10px !important; width: 140px !important; }
+  #goto-box input { font-size: 0.84rem !important; padding: 8px 32px 8px 10px !important; width: 168px !important; }
   #goto-box #goto-clear { font-size: 1.05rem !important; padding: 6px 8px !important; }
   #goto-box button { font-size: 0.84rem !important; padding: 8px 10px !important; }
 }
@@ -1693,11 +1705,12 @@ input[type=time] { background: var(--c-f5f7f9); border: 1px solid var(--c-d8dee6
 
 <div id="goto-box">
   <span class="goto-wrap">
-    <input type="text" id="goto-input" placeholder="緯度,經度 (e.g. 25.05,121.53)"
-           onkeydown="if(event.key==='Enter')gotoCoord()" oninput="updateGotoClear()" onfocus="this.select()">
+    <input type="text" id="goto-input" placeholder="🔍 地點 / 座標" autocomplete="off"
+           onkeydown="if(event.key==='Enter')gotoSmart()" oninput="updateGotoClear()" onfocus="this.select()">
     <button type="button" id="goto-clear" title="清除輸入" aria-label="清除輸入" onclick="clearGoto()">✕</button>
   </span>
-  <button onclick="gotoCoord()">➤ 跳轉</button>
+  <button id="btn-goto" onclick="gotoSmart()">➤ 前往</button>
+  <div id="search-results"></div>
 </div>
 
 <div id="sidebar">
@@ -1707,6 +1720,7 @@ input[type=time] { background: var(--c-f5f7f9); border: 1px solid var(--c-d8dee6
       <div style="display:flex;gap:5px;align-items:center">
         <span id="battery-badge" style="display:none;align-items:center;gap:2px;font-size:0.62rem;font-weight:700;border-radius:10px;padding:2px 7px;white-space:nowrap"></span>
         <button id="btn-sb-toggle" onclick="toggleSidebar()" style="background:var(--c-eef1f4);border:1px solid var(--c-d8dee6);color:var(--c-15803d);border-radius:6px;padding:4px 10px;font-size:0.68rem;cursor:pointer;touch-action:manipulation;white-space:nowrap">⬇ 收起</button>
+        <button id="btn-run-settings" onclick="toggleRunSettings()" title="執行中展開／收合設定" style="background:var(--c-eef1f4);border:1px solid var(--c-d8dee6);color:var(--c-374151);border-radius:6px;padding:4px 10px;font-size:0.68rem;cursor:pointer;touch-action:manipulation;white-space:nowrap">⚙️ 設定</button>
         <button id="btn-theme" onclick="toggleTheme()" title="切換深色／淺色" aria-label="切換深色／淺色" style="background:var(--c-eef1f4);border:1px solid var(--c-d8dee6);color:var(--c-374151);border-radius:6px;padding:4px 8px;font-size:0.68rem;cursor:pointer;touch-action:manipulation;white-space:nowrap">🌙</button>
         <button onclick="openHelp()" style="background:var(--c-eef1f4);border:1px solid var(--c-d8dee6);color:var(--c-2563eb);border-radius:6px;padding:4px 10px;font-size:0.68rem;cursor:pointer;touch-action:manipulation;white-space:nowrap">❓ 說明</button>
       </div>
@@ -1742,13 +1756,22 @@ input[type=time] { background: var(--c-f5f7f9); border: 1px solid var(--c-d8dee6
         <input type="range" id="speed" min="3" max="25" step="0.5" value="5">
         <span id="speed-val">5.0 km/h</span>
       </div>
-      <div class="ctrl"><input type="checkbox" id="loop"><label for="loop">折返</label></div>
-      <div class="ctrl"><input type="checkbox" id="straight"><label for="straight">直線</label></div>
-      <div class="ctrl"><input type="checkbox" id="auto-follow" checked><label for="auto-follow">跟隨</label></div>
-
-      <div class="ctrl">
+      <div class="seg" id="mode-seg" role="group" aria-label="移動模式">
+        <button type="button" data-mode="normal" class="active" onclick="setMode('normal')">🚗 一般</button>
+        <button type="button" data-mode="mushroom" onclick="setMode('mushroom')">🍄 尋菇</button>
+        <button type="button" data-mode="flower" onclick="setMode('flower')">🌸 瞬移</button>
+        <button type="button" data-mode="circle" onclick="setMode('circle')">🚶 繞圈</button>
+      </div>
+      <div class="chip-row">
+        <label class="chip"><input type="checkbox" id="loop"><span>折返</span></label>
+        <label class="chip"><input type="checkbox" id="straight"><span>直線</span></label>
+        <label class="chip"><input type="checkbox" id="auto-follow" checked><span>跟隨</span></label>
+      </div>
+      <!-- 三個模式的狀態仍由這些 checkbox 保存（既有邏輯都讀 .checked），改由上方模式列操作 -->
+      <div style="display:none">
         <input type="checkbox" id="mushroom-mode" onchange="onMushroomModeChange()">
-        <label for="mushroom-mode">🍄 尋菇模式</label>
+        <input type="checkbox" id="flower-mode" onchange="onFlowerModeChange()">
+        <input type="checkbox" id="circle-mode" onchange="onCircleModeChange()">
       </div>
       <div id="mushroom-dwell-row" style="display:none;flex-direction:column;gap:4px;padding:2px 0">
         <div style="display:flex;align-items:center;gap:4px;font-size:0.62rem;color:var(--c-4b5563)">
@@ -1765,10 +1788,6 @@ input[type=time] { background: var(--c-f5f7f9); border: 1px solid var(--c-d8dee6
         </button>
       </div>
 
-      <div class="ctrl">
-        <input type="checkbox" id="flower-mode" onchange="onFlowerModeChange()">
-        <label for="flower-mode">🌸 瞬間移動</label>
-      </div>
       <div id="flower-settings" style="display:none;flex-direction:column;gap:5px;padding:2px 0">
         <div style="display:flex;align-items:center;gap:4px;font-size:0.62rem;color:var(--c-4b5563)">
           <input type="text" id="flower-coord" placeholder="緯度,經度"
@@ -1789,10 +1808,6 @@ input[type=time] { background: var(--c-f5f7f9); border: 1px solid var(--c-d8dee6
         </div>
       </div>
 
-      <div class="ctrl">
-        <input type="checkbox" id="circle-mode" onchange="onCircleModeChange()">
-        <label for="circle-mode">🚶 繞圈種花</label>
-      </div>
       <div id="circle-settings" style="display:none;flex-direction:column;gap:5px;padding:2px 0">
         <div style="display:flex;align-items:center;gap:4px;font-size:0.62rem;color:var(--c-4b5563)">
           <input type="text" id="circle-coord" placeholder="緯度,經度"
@@ -1816,13 +1831,7 @@ input[type=time] { background: var(--c-f5f7f9); border: 1px solid var(--c-d8dee6
           <span id="circle-radius-val">20m</span>
         </div>
       </div>
-
-      <div class="search-wrap">
-        <input type="text" id="search-input" placeholder="🔍 搜尋地點"
-               onkeydown="if(event.key==='Enter')searchPlace()">
-        <button id="btn-search" onclick="searchPlace()">搜尋</button>
-        <div id="search-results"></div>
-      </div>
+    </div>
     </div>
 
     <div class="tab-panel" id="tab-marks">
@@ -2099,6 +2108,16 @@ function updateGotoClear() {
 function clearGoto() {
   const inp = document.getElementById('goto-input');
   inp.value = ''; updateGotoClear(); inp.focus();
+  document.getElementById('search-results').style.display = 'none';
+}
+
+// 單一輸入框：像座標就直接跳轉，否則當地名搜尋
+function gotoSmart() {
+  const raw = document.getElementById('goto-input').value.trim();
+  if (!raw) return;
+  document.getElementById('search-results').style.display = 'none';
+  const isCoord = /^[\s()（）\[\]【】]*-?\d+(?:\.\d+)?\s*[,，\s]\s*-?\d+(?:\.\d+)?[\s()（）\[\]【】]*$/.test(raw);
+  if (isCoord) gotoCoord(); else searchPlace();
 }
 
 function gotoCoord() {
@@ -2570,7 +2589,44 @@ function updateUI() {
   const sel = document.getElementById('route-select');
   document.getElementById('btn-export').disabled = !sel || !sel.value;
   document.getElementById('btn-goldpot').style.display = (phoneConnected && isRunning) ? '' : 'none';
+  syncModeSeg();
 }
+
+// ── 模式單選（一般/尋菇/瞬移/繞圈）：狀態存在三個隱藏 checkbox，沿用既有互斥與面板邏輯 ──
+function setMode(m) {
+  const ids = {mushroom: 'mushroom-mode', flower: 'flower-mode', circle: 'circle-mode'};
+  const fns = {mushroom: onMushroomModeChange, flower: onFlowerModeChange, circle: onCircleModeChange};
+  Object.keys(ids).forEach(k => { document.getElementById(ids[k]).checked = (k === m); });
+  Object.keys(ids).filter(k => k !== m).forEach(k => fns[k]());   // 先處理被關掉的
+  if (m !== 'normal') fns[m]();                                  // 最後處理被開啟的
+  updateUI();
+}
+function syncModeSeg() {
+  const cur = document.getElementById('mushroom-mode').checked ? 'mushroom'
+            : document.getElementById('flower-mode').checked ? 'flower'
+            : document.getElementById('circle-mode').checked ? 'circle' : 'normal';
+  document.querySelectorAll('#mode-seg button').forEach(b => {
+    const on = b.dataset.mode === cur; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on);
+  });
+}
+
+// ── 執行中（手機）自動收合側欄，只留停止/臨停；地圖尺寸變動時通知 Leaflet ──
+function toggleRunSettings() {
+  const open = document.body.classList.toggle('run-open');
+  document.getElementById('btn-run-settings').textContent = open ? '⚙️ 收合' : '⚙️ 設定';
+}
+(function () {
+  const stop = document.getElementById('btn-stop'), rs = document.getElementById('btn-run-settings');
+  const sync = () => {
+    const running = stop.style.display !== 'none';
+    document.body.classList.toggle('sim-running', running);
+    if (!running) { document.body.classList.remove('run-open'); rs.textContent = '⚙️ 設定'; }
+  };
+  new MutationObserver(sync).observe(stop, {attributes: true, attributeFilter: ['style']});
+  sync();
+  // 側欄高度會隨分頁內容/執行狀態改變 → 地圖容器跟著變，Leaflet 需重新量測，否則邊緣會露灰或錯位
+  if (window.ResizeObserver) new ResizeObserver(() => { try { map.invalidateSize({animate: false}); } catch (e) {} }).observe(document.getElementById('map'));
+})();
 
 // 提示橫幅：有進度（>0%）才顯示進度條，避免平常掛著一條「0%」
 (function () {
@@ -2800,8 +2856,9 @@ async function runSetupFromState(state) {
 
 // ── 搜尋 ──
 async function searchPlace() {
-  const q=document.getElementById('search-input').value.trim(); if(!q) return;
-  const btn=document.getElementById('btn-search');
+  const inp=document.getElementById('goto-input');
+  const q=inp.value.trim(); if(!q) return;
+  const btn=document.getElementById('btn-goto');
   btn.textContent='...'; btn.disabled=true;
   const box=document.getElementById('search-results');
   box.innerHTML=''; box.style.display='block';
@@ -2812,13 +2869,13 @@ async function searchPlace() {
     results.forEach(r=>{
       const div=document.createElement('div');
       div.textContent=r.name;
-      div.onclick=()=>{ map.setView([r.lat,r.lng],16); box.style.display='none'; document.getElementById('search-input').value=''; };
+      div.onclick=()=>{ map.setView([r.lat,r.lng],16); box.style.display='none'; inp.value=''; updateGotoClear(); };
       box.appendChild(div);
     });
   } catch { box.innerHTML='<div style="color:#e87e7e">搜尋失敗</div>'; }
-  finally { btn.textContent='搜尋'; btn.disabled=false; }
+  finally { btn.textContent='➤ 前往'; btn.disabled=false; }
 }
-document.addEventListener('click',e=>{ if(!e.target.closest('.search-wrap')) document.getElementById('search-results').style.display='none'; });
+document.addEventListener('click',e=>{ if(!e.target.closest('#goto-box')) document.getElementById('search-results').style.display='none'; });
 
 // ── 路線儲存／載入 ──
 async function refreshRouteList() {
@@ -3902,7 +3959,8 @@ function removeMapOverlay() {
           <table>
             <tr><td>畫面位置</td><td>內容</td></tr>
             <tr><td>上方常駐區<br>（切換分頁也不會消失）</td><td>第一列：🔌 連線手機、🌙 掛機模式、↩ 上一點、🗑 清除（最右兩顆小圖示鈕）<br>第二列：▶ 開始 ／ ⏹ 停止 ／ ⏸ 臨停（執行時並排）</td></tr>
-            <tr><td>🚗 移動</td><td>速度、折返／直線／跟隨、尋菇／瞬間移動／繞圈種花、搜尋地點</td></tr>
+            <tr><td>🚗 移動</td><td>速度、模式列（🚗 一般／🍄 尋菇／🌸 瞬移／🚶 繞圈）、折返／直線／跟隨</td></tr>
+            <tr><td>地圖左下角</td><td>單一輸入框：輸入地名搜尋，或輸入座標直接跳轉</td></tr>
             <tr><td>📍 標記</td><td>新增標記（🍄🌸⭐📍 + 標記名稱）、📋 我的標記</td></tr>
             <tr><td>📁 路線</td><td>儲存／載入／刪除、匯出／匯入、GPX、🗺️ 熱點</td></tr>
             <tr><td>⚙️ 更多</td><td>可展開收合的三區：🕹️ 搖桿、🗾 疊圖輔助、🔄 軟體更新</td></tr>
@@ -3916,12 +3974,14 @@ function removeMapOverlay() {
           <ul>
             <li><b>速度滑桿</b>：3–25 km/h，每步自動 ±15% 隨機化，並加入隨機停頓，模擬真人步伐</li>
             <li><b>🌙 / ☀️ 主題</b>：標題列右上角的按鈕可切換<b>深色／淺色</b>介面（地圖也會一併調暗），會記住你的選擇；晚上使用建議切深色</li>
+            <li><b>模式列</b>：🚗 一般／🍄 尋菇／🌸 瞬移／🚶 繞圈，四選一（點哪個就切到哪個，設定會出現在下方）</li>
+            <li><b>折返／直線／跟隨</b>是藥丸開關，點一下開／關（開啟時顯示 ✓）</li>
             <li><b>跟隨</b>：地圖自動跟著目前位置移動（可關閉手動拖地圖）</li>
             <li><b>↩ 上一點</b>（常駐區右側的 ↩ 鈕）：刪除最後一個中繼點並重算路線</li>
             <li><b>🗑 清除</b>（常駐區右側的 🗑 鈕）：清除所有中繼點與路線</li>
             <li><b>暖機警告</b>：新起點距上次停止點 &gt;500m 時，跳出確認提示</li>
           </ul>
-          <div class="tip">📱 手機版：標題列右側有「⬇ 收起」按鈕，收起工具列後地圖全螢幕；再按「⬆ 展開」恢復</div>
+          <div class="tip">📱 手機版：模擬開始後，下方設定區會<b>自動收起</b>，只留 ⏹ 停止／⏸ 臨停，地圖變大；要調整速度等設定，按標題列的「⚙️ 設定」展開（再按收合）。標題列的「⬇ 收起」可手動把工具列收成一條</div>
         </div>
       </div>
 
@@ -3960,7 +4020,7 @@ function removeMapOverlay() {
         <button class="hs-btn" onclick="toggleHs('h3','ha3')">🍄 尋菇模式 <span id="ha3">▸</span></button>
         <div class="hs-body" id="h3">
           <ul>
-            <li>勾選「🍄 尋菇模式」後，▶ 開始變為「🍄 開始尋菇」</li>
+            <li>在「🚗 移動」分頁的模式列點「<b>🍄 尋菇</b>」後，▶ 開始變為「🍄 開始尋菇」</li>
             <li>依序在每個中繼點<b>停留 N 分鐘</b>（預設 5 分鐘），每 2 秒送一次帶漂移的座標</li>
             <li>狀態列顯示「第 X/N 點 M:SS」倒數 + 進度條</li>
             <li>勾選「<b>循環</b>」→ 跑完全部點自動重頭，狀態列顯示第 N 圈</li>
@@ -3974,7 +4034,7 @@ function removeMapOverlay() {
         <button class="hs-btn" onclick="toggleHs('h4','ha4')">🌸 瞬間移動 <span id="ha4">▸</span></button>
         <div class="hs-body" id="h4">
           <ul>
-            <li>勾選「🌸 瞬間移動」後設定<b>目標座標</b>（或點「📍 地圖中心」自動填入）</li>
+            <li>在模式列點「<b>🌸 瞬移</b>」後設定<b>目標座標</b>（或點「📍 地圖中心」自動填入）</li>
             <li>按「✓ 確認座標」在地圖上標記目標點</li>
             <li>按 ▶ 開始後，先從 5m 外慢慢走到目標點，然後<b>停在目標定點</b>持續微漂移</li>
             <li>手動按 ⏹ 停止離開</li>
@@ -3988,7 +4048,7 @@ function removeMapOverlay() {
         <button class="hs-btn" onclick="toggleHs('h5','ha5')">🚶 繞圈種花 <span id="ha5">▸</span></button>
         <div class="hs-body" id="h5">
           <ul>
-            <li>勾選「🚶 繞圈種花」後設定<b>圓心座標</b>（或點「📍 地圖中心」）</li>
+            <li>在模式列點「<b>🚶 繞圈</b>」後設定<b>圓心座標</b>（或點「📍 地圖中心」）</li>
             <li>按「✓ 確認座標」在地圖上標記圓心與圓圈</li>
             <li>調整<b>半徑</b>（10–50m，滑桿控制），圓圈即時更新</li>
             <li>按 ▶ 開始後，依速度設定持續繞圓移動，不需設路線中繼點</li>
@@ -4094,8 +4154,10 @@ function removeMapOverlay() {
         <button class="hs-btn" onclick="toggleHs('h10','ha10')">🔍 搜尋與定位 <span id="ha10">▸</span></button>
         <div class="hs-body" id="h10">
           <ul>
-            <li><b>搜尋框</b>：輸入中文地址或地名 → 按搜尋 → 點結果飛到該地</li>
-            <li><b>GPS 跳轉框</b>（地圖左下角）：輸入「緯度,經度」或按 Enter 直接飛到座標；輸入框右側的 <b>✕</b> 可一鍵清除，點進輸入框也會自動全選，直接貼上新座標即可取代舊的</li>
+            <li><b>搜尋／跳轉框</b>（地圖左下角，只有這一個輸入框）：</li>
+            <li>輸入<b>地名或地址</b>（中文可）→ 按「➤ 前往」或 Enter → 點結果飛到該地（結果清單往上展開）</li>
+            <li>輸入<b>「緯度,經度」</b>（例如 25.0478,121.5319）→ 直接飛到座標。系統會自動判斷是座標還是地名</li>
+            <li>輸入框右側的 <b>✕</b> 可一鍵清除；點進輸入框會自動全選，直接貼上新內容即可取代舊的</li>
             <li>飛到後地圖顯示<b>紅色十字準星</b>，可點 popup「加為中繼點」或「移除」</li>
           </ul>
           <div class="tip">座標格式範例：<code>25.0478,121.5319</code>（台北 101）</div>
