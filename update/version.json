@@ -1,7 +1,7 @@
 {
-  "version": "1.5.18",
+  "version": "1.5.19",
   "url": "https://gpsikmin2026.github.io/update/pikmin_web.py",
-  "sha256": "9c05e089379d3ce7a02b81cc2a26c2822e622bb2ca0936d8e4e5b2884a6f7972",
-  "sig": "R5cG2cKwa7GR9IscsAdIi4wrQ4fLmIskoa8fKd5clice/rNT/6EdZhXBrkGApckoB48xFFP77T/zxr1FxvqgDQ==",
-  "changelog": "v1.5.18：新增深色／淺色介面切換（標題列 🌙）；標記可直接輸入名稱與改名；座標跳轉框加清除鈕；說明手冊校正並新增軟體更新、電量章節。"
+  "sha256": "7ca0f2900f2d79b903928c3bce5529c2d4c451a2bcbe788e99cafe5ebac0c742",
+  "sig": "M8/WsI2HL08UHshgETD+bWxL/LcpEXMspExalNgSGVyQohtphlon437NHSbx2vYfU8OgSly7WXIpwi6Js2E9CA==",
+  "changelog": "v1.5.19：介面版面優化——上方常駐區縮成兩列、地圖更大；分頁改為 移動／標記／路線／更多；開始鈕灰色時直接寫出還缺什麼；提示橫幅不再掛著 0% 進度條。"
 }

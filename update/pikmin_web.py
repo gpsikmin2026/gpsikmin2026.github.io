@@ -3,7 +3,7 @@
 GPsikmin Web UI
 執行：python3 pikmin_web.py
 """
-VERSION = "1.5.18"
+VERSION = "1.5.19"
 
 import asyncio
 import fcntl
@@ -1467,13 +1467,32 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; b
 #pinned-actions { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-bottom: 1px solid var(--c-e2e6ec); flex-shrink: 0; }
 .big-btn { padding: 9px; border: none; border-radius: 8px; cursor: pointer; font-size: 0.78rem; font-weight: 700; touch-action: manipulation; width: 100%; }
 #btn-start { background: #7ee8a2; color: #14532d; }
-#btn-start:disabled { background: var(--c-eef1f4); color: var(--c-b0b6bf); cursor: not-allowed; }
+#btn-start:disabled { background: var(--c-eef1f4); color: var(--c-6b7280); cursor: not-allowed; }
 #btn-stop     { background: #ef4444; color: #fff; }
 #btn-hold-stop{ background: #d97706; color: #fff; }
 #btn-goldpot  { background: #92400e; color: #fff; }
 .mini-row { display: flex; gap: 6px; }
 .mini-row .big-btn { flex: 1; padding: 6px; font-size: 0.68rem; }
 #btn-undo, #btn-clear { background: var(--c-eef1f4); color: var(--c-374151); }
+/* 路線分頁：檔案操作用等寬格線，避免大小參差 */
+.route-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.route-grid .btn-sm { width: 100%; box-sizing: border-box; min-height: 34px; display: flex; align-items: center; justify-content: center; margin: 0; padding: 6px 4px; }
+.route-grid .btn-sm.wide { grid-column: span 2; }
+.btn-sm.danger { color: var(--c-dc2626); }
+/* 常駐區：兩列（工具列 + 主要動作） */
+.pin-row { display: flex; gap: 6px; }
+.pin-row .big-btn { flex: 1 1 0; min-width: 0; padding: 7px 4px; font-size: 0.7rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pin-row .big-btn.icon { flex: 0 0 40px; padding: 7px 0; font-size: 0.85rem; }
+.pin-row.main .big-btn { padding: 10px 4px; font-size: 0.8rem; }
+/* 提示橫幅：進度條只在有進度時顯示 */
+#info-bar:not(.has-progress) #progress-bar, #info-bar:not(.has-progress) #progress-text { display: none; }
+/* 「更多」分頁的可收合區塊 */
+.more-sec { border: 1px solid var(--c-e2e6ec); border-radius: 8px; overflow: hidden; }
+.more-sec > summary { cursor: pointer; padding: 10px 12px; font-size: 0.72rem; font-weight: 700; color: var(--c-374151); background: var(--c-f7f8fa); list-style: none; touch-action: manipulation; }
+.more-sec > summary::-webkit-details-marker { display: none; }
+.more-sec > summary::before { content: '▸ '; color: var(--c-6b7280); }
+.more-sec[open] > summary::before { content: '▾ '; }
+.more-sec > .more-body { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; }
 
 /* Tab bar */
 #tab-bar { display: flex; border-bottom: 1px solid var(--c-e2e6ec); flex-shrink: 0; overflow-x: auto; }
@@ -1571,8 +1590,14 @@ input[type=time] { background: var(--c-f5f7f9); border: 1px solid var(--c-d8dee6
   button { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
   .big-btn { font-size: 0.95rem !important; padding: 12px !important; }
   .mini-row .big-btn { font-size: 0.8rem !important; padding: 9px !important; }
+  .pin-row .big-btn { font-size: 0.82rem !important; padding: 8px 4px !important; }
+  .pin-row .big-btn.icon { flex: 0 0 46px !important; font-size: 1rem !important; padding: 8px 0 !important; }
+  .pin-row.main .big-btn { font-size: 0.95rem !important; padding: 11px 4px !important; }
+  .more-sec > summary { font-size: 0.85rem; padding: 12px; }
+  #pinned-actions { padding: 8px 12px; gap: 5px; }
   .btn { font-size: 0.88rem !important; padding: 9px 12px !important; }
   .btn-sm { font-size: 0.86rem !important; padding: 9px 12px !important; }
+  .route-grid .btn-sm { padding: 9px 4px !important; min-height: 42px; }
   .btn-mtype { font-size: 1.3rem !important; padding: 8px 4px !important; }
   .btn-mtype .mt-txt { font-size: 0.72rem !important; }
   #marker-name { font-size: 0.9rem !important; padding: 9px 10px !important; }
@@ -1689,26 +1714,25 @@ input[type=time] { background: var(--c-f5f7f9); border: 1px solid var(--c-d8dee6
   </div>
 
   <div id="pinned-actions">
-    <div class="mini-row">
+    <div class="pin-row">
       <button class="big-btn" id="btn-connect" onclick="connectPhone()" style="background:var(--c-eef1f4);color:var(--c-374151)" title="連線 iPhone">🔌 連線手機</button>
       <button class="big-btn" id="btn-afk" onclick="toggleAfkMode()" title="掛機：斷線自動重連並重啟">🌙 掛機模式</button>
+      <button class="big-btn icon" id="btn-undo" onclick="undoWaypoint()" title="上一點：刪除最後一個中繼點" aria-label="上一點">↩</button>
+      <button class="big-btn icon" id="btn-clear" onclick="clearAll()" title="清除：清掉所有中繼點與路線" aria-label="清除">🗑</button>
     </div>
-    <button class="big-btn" id="btn-start" onclick="startSim()" disabled>▶ 開始</button>
-    <button class="big-btn" id="btn-stop" onclick="stopSim()" style="display:none">⏹ 停止</button>
-    <button class="big-btn" id="btn-hold-stop" onclick="holdStopSim()" style="display:none" title="凍結GPS在當前位置（不清除定位），方便走向目標後繼續">⏸ 臨停GPS</button>
-    <button class="big-btn" id="btn-goldpot" onclick="startGoldpot()" style="display:none" title="凍結GPS在金盆位置，倒數後斷線DVT，趁機互動金盆（需配合 IPLocate）">🪣 拉金盆</button>
-    <div class="mini-row">
-      <button class="big-btn" id="btn-undo" onclick="undoWaypoint()">↩ 上一點</button>
-      <button class="big-btn" id="btn-clear" onclick="clearAll()">🗑 清除</button>
+    <div class="pin-row main">
+      <button class="big-btn" id="btn-start" onclick="startSim()" disabled>▶ 開始</button>
+      <button class="big-btn" id="btn-stop" onclick="stopSim()" style="display:none">⏹ 停止</button>
+      <button class="big-btn" id="btn-hold-stop" onclick="holdStopSim()" style="display:none" title="凍結GPS在當前位置（不清除定位），方便走向目標後繼續">⏸ 臨停GPS</button>
+      <button class="big-btn" id="btn-goldpot" onclick="startGoldpot()" style="display:none" title="凍結GPS在金盆位置，倒數後斷線DVT，趁機互動金盆（需配合 IPLocate）">🪣 拉金盆</button>
     </div>
   </div>
 
   <div id="tab-bar">
     <button class="tab-btn active" id="tabbtn-move" onclick="switchTab('move')">🚗 移動</button>
     <button class="tab-btn" id="tabbtn-marks" onclick="switchTab('marks')">📍 標記</button>
-    <button class="tab-btn" id="tabbtn-remote" onclick="switchTab('remote')">🕹️ 搖桿</button>
-    <button class="tab-btn" id="tabbtn-overlay" onclick="switchTab('overlay')">🗾 疊圖</button>
-    <button class="tab-btn" id="tabbtn-update" onclick="switchTab('update')">🔄 更新</button>
+    <button class="tab-btn" id="tabbtn-routes" onclick="switchTab('routes')">📁 路線</button>
+    <button class="tab-btn" id="tabbtn-more" onclick="switchTab('more')">⚙️ 更多</button>
   </div>
 
   <div id="tab-panels">
@@ -1813,7 +1837,9 @@ input[type=time] { background: var(--c-f5f7f9); border: 1px solid var(--c-d8dee6
       <div id="marker-hint">① 點上方選類型　② 輸入名稱（可省略）　③ 點地圖放置</div>
       <button class="btn" onclick="openMarkersModal()"
               style="background:var(--c-dbe8ff);color:var(--c-1d4ed8);width:100%" title="我的標記清單">📋 我的標記</button>
+    </div>
 
+    <div class="tab-panel" id="tab-routes">
       <div class="section-label">路線管理</div>
       <div class="field-row">
         <span style="font-size:0.62rem;color:var(--c-6b7280)">儲存：</span>
@@ -1825,20 +1851,21 @@ input[type=time] { background: var(--c-f5f7f9); border: 1px solid var(--c-d8dee6
         <select id="route-select"><option value="">-- 選擇路線 --</option></select>
         <button class="btn-sm" id="btn-load" onclick="loadRoute()" disabled>📂 載入</button>
       </div>
-      <div class="field-row">
-        <button class="btn-sm" id="btn-spots" onclick="openSpotsModal()"
-                style="background:var(--c-fbe4ec);color:var(--c-be185d)" title="載入 pogoskill 熱點座標">🗺️ 熱點</button>
-        <button class="btn-sm" id="btn-del"  onclick="deleteRoute()">🗑 刪除</button>
-        <button class="btn-sm" id="btn-export" onclick="exportRoute()" disabled title="加密匯出 .gpsikmin">⬇ 匯出</button>
-      </div>
-      <div class="field-row">
+      <div class="route-grid">
         <button class="btn-sm" style="background:var(--c-eef1f4);color:var(--c-374151)" onclick="document.getElementById('import-file-input').click()">⬆ 匯入</button>
         <input type="file" id="import-file-input" accept="*/*" style="display:none" onchange="importRoute(event)">
+        <button class="btn-sm" id="btn-export" onclick="exportRoute()" disabled title="加密匯出 .gpsikmin">⬇ 匯出</button>
         <label class="btn-sm btn-gpx" title="匯入 GPX">📁 GPX<input type="file" accept=".gpx" onchange="importGPX(event)"></label>
+        <button class="btn-sm wide" id="btn-spots" onclick="openSpotsModal()"
+                style="background:var(--c-fbe4ec);color:var(--c-be185d)" title="載入 pogoskill 熱點座標">🗺️ 熱點</button>
+        <button class="btn-sm danger" id="btn-del" onclick="deleteRoute()" title="刪除所選路線">🗑 刪除</button>
       </div>
     </div>
 
-    <div class="tab-panel" id="tab-remote">
+    <div class="tab-panel" id="tab-more">
+      <details class="more-sec" id="sec-remote" open>
+        <summary>🕹️ 搖桿</summary>
+        <div class="more-body">
       <button class="btn" id="btn-joystick" onclick="toggleJoystick()" style="background:var(--c-eef1f4);color:var(--c-374151);width:100%" title="實體搖桿模式">🕹️ 搖桿 <span id="ble-dot" style="color:var(--c-9ca3af)" title="搖桿未連線">●</span></button>
       <div style="display:flex;gap:4px;margin-top:4px">
         <button id="btn-mode-coarse" onclick="setJoyMode('coarse')"
@@ -1853,9 +1880,12 @@ input[type=time] { background: var(--c-f5f7f9); border: 1px solid var(--c-d8dee6
         <button onclick="setJoyStep(200)" id="btn-step-200" style="flex:1;padding:4px;border:none;border-radius:4px;font-size:0.68rem;cursor:pointer;background:var(--c-eef1f4);color:var(--c-6b7280)">200m</button>
         <button onclick="setJoyStep(500)" id="btn-step-500" style="flex:1;padding:4px;border:none;border-radius:4px;font-size:0.68rem;cursor:pointer;background:var(--c-eef1f4);color:var(--c-6b7280)">500m</button>
       </div>
-    </div>
-
-    <div class="tab-panel" id="tab-overlay">
+    
+        </div>
+      </details>
+      <details class="more-sec" id="sec-overlay">
+        <summary>🗾 疊圖輔助</summary>
+        <div class="more-body">
       <div style="font-size:0.62rem;color:var(--c-6b7280);margin-bottom:4px">先把地圖移到截圖對應的區域，再上傳</div>
       <label class="btn-sm" style="background:var(--c-dbe8ff);color:var(--c-1d4ed8);cursor:pointer;text-align:center;width:100%">
         📸 上傳遊戲截圖
@@ -1874,9 +1904,12 @@ input[type=time] { background: var(--c-f5f7f9); border: 1px solid var(--c-d8dee6
         <input type="hidden" id="overlay-rotation" value="0">
         <input type="hidden" id="overlay-scale" value="100">
       </div>
-    </div>
-
-    <div class="tab-panel" id="tab-update">
+    
+        </div>
+      </details>
+      <details class="more-sec" id="sec-update">
+        <summary>🔄 軟體更新</summary>
+        <div class="more-body">
       <div style="display:flex;align-items:center;gap:8px">
         <span style="font-size:0.65rem;color:var(--c-6b7280)">目前版本：</span>
         <span id="update-current" style="font-size:0.75rem;color:var(--c-15803d);font-weight:bold"></span>
@@ -1898,6 +1931,9 @@ input[type=time] { background: var(--c-f5f7f9); border: 1px solid var(--c-d8dee6
         </button>
         <div id="wifisync-result" style="display:none;font-size:0.6rem;color:var(--c-374151);line-height:1.5;padding:6px;background:var(--c-fef3c7);border-radius:4px;margin-top:5px"></div>
       </div>
+    
+        </div>
+      </details>
     </div>
   </div>
 </div>
@@ -2523,13 +2559,26 @@ function updateUI() {
     has = routeCoords.length >= 2;
   }
   document.getElementById('btn-start').disabled = !(has && phoneConnected);
-  document.getElementById('btn-start').textContent =
-    mushroomMode ? '🍄 開始尋菇' : flowerMode ? '🌸 瞬間移動' : circleMode ? '🚶 開始繞圈' : '▶ 開始';
+  // 開始鈕：停用時把「還缺什麼」直接寫在按鈕上，不另外佔一行
+  let label = mushroomMode ? '🍄 開始尋菇' : flowerMode ? '🌸 瞬間移動' : circleMode ? '🚶 開始繞圈' : '▶ 開始';
+  if (!isRunning) {
+    if (!phoneConnected) label += '（請先連線手機）';
+    else if (!has) label += flowerMode ? '（先確認座標）' : circleMode ? '（先確認圓心）' : mushroomMode ? '（先點地圖選點）' : '（先點地圖選 2 點以上）';
+  }
+  document.getElementById('btn-start').textContent = label;
   document.getElementById('btn-save').disabled = routeCoords.length < 2;
   const sel = document.getElementById('route-select');
   document.getElementById('btn-export').disabled = !sel || !sel.value;
   document.getElementById('btn-goldpot').style.display = (phoneConnected && isRunning) ? '' : 'none';
 }
+
+// 提示橫幅：有進度（>0%）才顯示進度條，避免平常掛著一條「0%」
+(function () {
+  const bar = document.getElementById('info-bar'), fill = document.getElementById('progress-fill');
+  const sync = () => bar.classList.toggle('has-progress', (parseFloat(fill.style.width) || 0) > 0);
+  new MutationObserver(sync).observe(fill, {attributes: true, attributeFilter: ['style']});
+  sync();
+})();
 
 // ── 掛機模式 ──
 let afkMode = false, savedRunConfig = null, userStopped = false;
@@ -3515,6 +3564,7 @@ refreshRouteList();
 loadCustomMarkers();
 restoreRouteState();
 // 開頁時檢查手機是否仍連線（補上非模擬狀態的還原）
+updateUI();   // 先依目前狀態顯示「開始鈕」的提示
 (async()=>{
   if (phoneConnected) return;
   try {
@@ -3845,17 +3895,17 @@ function removeMapOverlay() {
             <li>iPhone USB 接皮皮盒 → 連上 WiFi → 開啟 <b>http://192.168.4.1:5000</b> → 點畫面上方的 <b>🔌 連線手機</b></li>
             <li>在地圖上依序點選路線中繼點（至少 2 點）</li>
             <li>點 <b>▶ 開始</b>，🌱 標記開始沿路線移動</li>
+            <li>「▶ 開始」是灰色時，按鈕上會直接寫出還缺什麼（例如「請先連線手機」「先點地圖選 2 點以上」）</li>
             <li>點 <b>⏹ 停止</b> 隨時中斷</li>
           </ul>
           <div class="tip">連線時 iPhone 螢幕必須亮著（解鎖狀態），建立 tunnel 約需 5–35 秒</div>
           <table>
             <tr><td>畫面位置</td><td>內容</td></tr>
-            <tr><td>上方常駐區<br>（切換分頁也不會消失）</td><td>🔌 連線手機、🌙 掛機模式、▶ 開始／⏹ 停止／⏸ 臨停、↩ 上一點、🗑 清除</td></tr>
+            <tr><td>上方常駐區<br>（切換分頁也不會消失）</td><td>第一列：🔌 連線手機、🌙 掛機模式、↩ 上一點、🗑 清除（最右兩顆小圖示鈕）<br>第二列：▶ 開始 ／ ⏹ 停止 ／ ⏸ 臨停（執行時並排）</td></tr>
             <tr><td>🚗 移動</td><td>速度、折返／直線／跟隨、尋菇／瞬間移動／繞圈種花、搜尋地點</td></tr>
-            <tr><td>📍 標記</td><td>新增標記（🍄🌸⭐📍）、我的標記、路線管理（儲存／載入／匯出入／GPX／熱點）</td></tr>
-            <tr><td>🕹️ 搖桿</td><td>實體搖桿模式、粗調／微調、跳距</td></tr>
-            <tr><td>🗾 疊圖</td><td>遊戲截圖疊圖對位</td></tr>
-            <tr><td>🔄 更新</td><td>檢查並更新軟體版本</td></tr>
+            <tr><td>📍 標記</td><td>新增標記（🍄🌸⭐📍 + 標記名稱）、📋 我的標記</td></tr>
+            <tr><td>📁 路線</td><td>儲存／載入／刪除、匯出／匯入、GPX、🗺️ 熱點</td></tr>
+            <tr><td>⚙️ 更多</td><td>可展開收合的三區：🕹️ 搖桿、🗾 疊圖輔助、🔄 軟體更新</td></tr>
           </table>
         </div>
       </div>
@@ -3867,8 +3917,8 @@ function removeMapOverlay() {
             <li><b>速度滑桿</b>：3–25 km/h，每步自動 ±15% 隨機化，並加入隨機停頓，模擬真人步伐</li>
             <li><b>🌙 / ☀️ 主題</b>：標題列右上角的按鈕可切換<b>深色／淺色</b>介面（地圖也會一併調暗），會記住你的選擇；晚上使用建議切深色</li>
             <li><b>跟隨</b>：地圖自動跟著目前位置移動（可關閉手動拖地圖）</li>
-            <li><b>↩ 上一點</b>：刪除最後一個中繼點並重算路線</li>
-            <li><b>🗑 清除</b>：清除所有中繼點與路線</li>
+            <li><b>↩ 上一點</b>（常駐區右側的 ↩ 鈕）：刪除最後一個中繼點並重算路線</li>
+            <li><b>🗑 清除</b>（常駐區右側的 🗑 鈕）：清除所有中繼點與路線</li>
             <li><b>暖機警告</b>：新起點距上次停止點 &gt;500m 時，跳出確認提示</li>
           </ul>
           <div class="tip">📱 手機版：標題列右側有「⬇ 收起」按鈕，收起工具列後地圖全螢幕；再按「⬆ 展開」恢復</div>
@@ -3879,7 +3929,7 @@ function removeMapOverlay() {
         <button class="hs-btn" onclick="toggleHs('h14','ha14')">⏸ 臨停 GPS <span id="ha14">▸</span></button>
         <div class="hs-body" id="h14">
           <ul>
-            <li>模擬進行中會出現橘色「<b>⏸ 臨停GPS</b>」按鈕（在 ▶ 開始／⏹ 停止 的下方），任何模式皆可用</li>
+            <li>模擬進行中會出現橘色「<b>⏸ 臨停GPS</b>」按鈕（與 ⏹ 停止 同一列並排），任何模式皆可用</li>
             <li>按下後：<b>停止自動走路，但 GPS 凍結在當前位置</b>——不清除定位，iPhone 不會跳回真實位置</li>
             <li>用途：路上發現附近有菇 / 花 → 按臨停 → 在地圖點該位置<b>加中繼點</b> → 按 ▶ 開始 → 走過去採集</li>
             <li>採完後按 <b>⏹ 停止</b>（正常停止）才會清除模擬定位、讓 iPhone 回到真實 GPS</li>
@@ -3976,7 +4026,7 @@ function removeMapOverlay() {
         <div class="hs-body" id="h13">
           <ul>
             <li>把遊戲截圖疊在地圖上，協助對準 GPS 位置（標點或設路線用）</li>
-            <li>先把地圖移到截圖對應的區域，切到「🗾 疊圖」分頁 → 點「📸 上傳遊戲截圖」</li>
+            <li>先把地圖移到截圖對應的區域，到「⚙️ 更多」分頁，展開「🗾 疊圖輔助」→ 點「📸 上傳遊戲截圖」</li>
             <li>截圖出現後，拖曳地圖上的三個把手調整位置：</li>
           </ul>
           <table>
@@ -3998,7 +4048,7 @@ function removeMapOverlay() {
         <button class="hs-btn" onclick="toggleHs('h7','ha7')">📁 路線管理 <span id="ha7">▸</span></button>
         <div class="hs-body" id="h7">
           <ul>
-            <li>路線管理在「<b>📍 標記</b>」分頁的下半部</li>
+            <li>路線管理在「<b>📁 路線</b>」分頁</li>
             <li><b>儲存</b>：輸入路線名稱 → 💾 儲存（含中繼點 + 完整路線座標）</li>
             <li><b>載入</b>：下拉選擇路線 → 📂 載入，自動還原地圖路線</li>
             <li><b>熱點</b>：🗺️ 熱點，開啟 pogoskill 台灣蘑菇/大花/明信片/POI 清單，點擊定位或載入為標記</li>
@@ -4031,7 +4081,7 @@ function removeMapOverlay() {
         <div class="hs-body" id="h12">
           <ul>
             <li>搖桿開機後會自動連上皮皮盒，● 指示燈變綠表示已連線</li>
-            <li>到「🕹️ 搖桿」分頁，按「🕹️ 搖桿 ●」按鈕進入搖桿模式</li>
+            <li>到「⚙️ 更多」分頁，在「🕹️ 搖桿」區按「🕹️ 搖桿 ●」按鈕進入搖桿模式</li>
             <li><b>粗調</b>：撥一下立即跳躍固定距離（不管搖桿停留多久），可選 50 / 100 / 200 / 500 m</li>
             <li><b>微調</b>：持續按住方向，按照速度滑桿設定的速度連續移動</li>
             <li>按 <b>[粗調] / [微調]</b> 切換模式；粗調模式下可再選跳距</li>
@@ -4056,7 +4106,7 @@ function removeMapOverlay() {
         <button class="hs-btn" onclick="toggleHs('h15','ha15')">🔄 軟體更新 <span id="ha15">▸</span></button>
         <div class="hs-body" id="h15">
           <ul>
-            <li>到「<b>🔄 更新</b>」分頁 → 按「🔍 檢查更新」→ 有新版本時按「⬆ 立即更新」</li>
+            <li>到「<b>⚙️ 更多</b>」分頁，展開「<b>🔄 軟體更新</b>」→ 按「🔍 檢查更新」→ 有新版本時按「⬆ 立即更新」</li>
             <li>版本號顯示在標題「GPsikmin」旁邊的小字</li>
             <li><b>需要網路</b>：盒子要能上網（例如 iPhone 開「個人熱點」並用 USB 接著），或手機開著<b>行動數據</b>（手機連盒子 WiFi 時，由手機幫忙下載更新再傳給盒子）</li>
             <li>更新前請先 <b>⏹ 停止</b> 模擬；模擬進行中無法更新</li>
