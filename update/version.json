@@ -1,7 +1,7 @@
 {
-  "version": "1.5.21",
+  "version": "1.5.22",
   "url": "https://gpsikmin2026.github.io/update/pikmin_web.py",
-  "sha256": "aa6b7309c3a58290ddde26269e0eac8bcb84de1bcba27083c555f4929fc0e15d",
-  "sig": "GiriCpZAjMxaNg2vDQ1xpaAkiF/YKl6l6/JQ3shFZvrvwmRXVph23i/puY3RA/yPYpvRKYdjvzKP/b8acvDVAg==",
-  "changelog": "修正手機版標記/路線/更多分頁內容過長時無法上下捲動"
+  "sha256": "3d553bfecf5858287c73c479a272d4e8b5459bb6c4d8933b9782b60abd776533",
+  "sig": "UHMuud8cs5VWNWGWToIcv8Ow9D26pQYjtNTaoxXIqfYflQfPknTaYrXGp6y4S3/5NdwKbv7uQzZTqTH7+ajPAA==",
+  "changelog": "修正地圖座標輸入框無法貼上（移除點擊自動全選）"
 }

@@ -3,7 +3,7 @@
 GPsikmin Web UI
 執行：python3 pikmin_web.py
 """
-VERSION = "1.5.21"
+VERSION = "1.5.22"
 
 import asyncio
 import fcntl
@@ -1706,7 +1706,7 @@ input[type=time] { background: var(--c-f5f7f9); border: 1px solid var(--c-d8dee6
 <div id="goto-box">
   <span class="goto-wrap">
     <input type="text" id="goto-input" placeholder="🔍 地點 / 座標" autocomplete="off"
-           onkeydown="if(event.key==='Enter')gotoSmart()" oninput="updateGotoClear()" onfocus="this.select()">
+           onkeydown="if(event.key==='Enter')gotoSmart()" oninput="updateGotoClear()">
     <button type="button" id="goto-clear" title="清除輸入" aria-label="清除輸入" onclick="clearGoto()">✕</button>
   </span>
   <button id="btn-goto" onclick="gotoSmart()">➤ 前往</button>
