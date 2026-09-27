@@ -3,7 +3,7 @@
 GPsikmin Web UI
 執行：python3 pikmin_web.py
 """
-VERSION = "1.5.23"
+VERSION = "1.5.24"
 
 import asyncio
 import fcntl
@@ -1753,8 +1753,8 @@ input[type=time] { background: var(--c-f5f7f9); border: 1px solid var(--c-d8dee6
     <div class="tab-panel active" id="tab-move">
       <div class="ctrl">
         <label>速度</label>
-        <input type="range" id="speed" min="3" max="25" step="0.5" value="5">
-        <span id="speed-val">5.0 km/h</span>
+        <input type="range" id="speed" min="3" max="25" step="0.5" value="18">
+        <span id="speed-val">18.0 km/h</span>
       </div>
       <div class="seg" id="mode-seg" role="group" aria-label="移動模式">
         <button type="button" data-mode="normal" class="active" onclick="setMode('normal')">🚗 一般</button>
