@@ -3,7 +3,7 @@
 GPsikmin Web UI
 執行：python3 pikmin_web.py
 """
-VERSION = "1.5.22"
+VERSION = "1.5.23"
 
 import asyncio
 import fcntl
@@ -1763,8 +1763,8 @@ input[type=time] { background: var(--c-f5f7f9); border: 1px solid var(--c-d8dee6
         <button type="button" data-mode="circle" onclick="setMode('circle')">🚶 繞圈</button>
       </div>
       <div class="chip-row">
-        <label class="chip"><input type="checkbox" id="loop"><span>折返</span></label>
-        <label class="chip"><input type="checkbox" id="straight"><span>直線</span></label>
+        <label class="chip"><input type="checkbox" id="loop" checked><span>折返</span></label>
+        <label class="chip"><input type="checkbox" id="straight" checked><span>直線</span></label>
         <label class="chip"><input type="checkbox" id="auto-follow" checked><span>跟隨</span></label>
       </div>
       <!-- 三個模式的狀態仍由這些 checkbox 保存（既有邏輯都讀 .checked），改由上方模式列操作 -->
