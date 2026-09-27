@@ -1,7 +1,7 @@
 {
-  "version": "1.5.22",
+  "version": "1.5.23",
   "url": "https://gpsikmin2026.github.io/update/pikmin_web.py",
-  "sha256": "3d553bfecf5858287c73c479a272d4e8b5459bb6c4d8933b9782b60abd776533",
-  "sig": "UHMuud8cs5VWNWGWToIcv8Ow9D26pQYjtNTaoxXIqfYflQfPknTaYrXGp6y4S3/5NdwKbv7uQzZTqTH7+ajPAA==",
-  "changelog": "修正地圖座標輸入框無法貼上（移除點擊自動全選）"
+  "sha256": "5a1940e567316abc56945e33e6ec023a7b53bb640f344a86741da0ad5bc5cacb",
+  "sig": "eNglY+8aaABfIL6PG4dWAdp8NgRCCUJ+KoHNkVsuTUcGlc0XozKkrIDp6qvs9IdI0qgstv4sWFBCrB70oYwIBQ==",
+  "changelog": "折返、直線、跟隨預設開啟"
 }
