@@ -3,7 +3,7 @@
 GPsikmin Web UI
 執行：python3 pikmin_web.py
 """
-VERSION = "1.5.24"
+VERSION = "1.5.25"
 
 import asyncio
 import fcntl
@@ -1366,34 +1366,6 @@ def api_setup_mount():
         return jsonify({"ok": False, "output": str(e)})
 
 
-@app.route("/api/experimental/wifi_sync_status")
-def api_wifi_sync_status():
-    """實驗性功能：查詢目前手機的 WiFi 同步（wifi-connections）開關狀態。需 USB 連線中。"""
-    try:
-        r = subprocess.run([PMD3, "lockdown", "wifi-connections"],
-                           capture_output=True, text=True, timeout=8)
-        out = (r.stdout + r.stderr).strip()
-        return jsonify({"ok": r.returncode == 0, "output": out})
-    except Exception as e:
-        return jsonify({"ok": False, "output": str(e)})
-
-
-@app.route("/api/experimental/wifi_sync_enable", methods=["POST"])
-def api_wifi_sync_enable():
-    """實驗性功能：開啟手機的 WiFi 同步能力，讓 tunneld 之後有機會不靠 USB 線就抓到裝置
-    （tunneld 預設本來就有 --wifi 探索，缺的只是手機端這個開關）。需 USB 連線中才能設定。"""
-    try:
-        r = subprocess.run([PMD3, "lockdown", "wifi-connections", "--state", "on"],
-                           capture_output=True, text=True, timeout=10)
-        out = (r.stdout + r.stderr).strip()
-        ok = r.returncode == 0
-        return jsonify({"ok": ok, "output": out or ("已開啟" if ok else "設定失敗")})
-    except subprocess.TimeoutExpired:
-        return jsonify({"ok": False, "output": "逾時，請確認手機已解鎖且透過 USB 連線中"})
-    except Exception as e:
-        return jsonify({"ok": False, "output": str(e)})
-
-
 @app.route("/connect_phone", methods=["POST"])
 def connect_phone():
     global tunneld_proc, _tunneld_starting
@@ -1509,9 +1481,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; b
 .more-sec > .more-body { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; }
 
 /* Tab bar */
-#tab-bar { display: flex; border-bottom: 1px solid var(--c-e2e6ec); flex-shrink: 0; overflow-x: auto; }
-.tab-btn { flex: 1; background: none; border: none; padding: 8px 4px; font-size: 0.62rem; color: var(--c-6b7280); cursor: pointer; white-space: nowrap; border-bottom: 2px solid transparent; touch-action: manipulation; }
-.tab-btn.active { color: var(--c-15803d); border-bottom-color: var(--c-15803d); font-weight: 700; background: var(--c-f3faf5); }
+#tab-bar { display: flex; gap: 6px; background: var(--c-eef1f4); border-bottom: 1px solid var(--c-d8dee6); flex-shrink: 0; overflow-x: auto; padding: 7px 8px; }
+.tab-btn { flex: 1; background: var(--c-ffffff); border: 1px solid var(--c-d8dee6); border-radius: 9px; padding: 9px 4px; font-size: 0.76rem; font-weight: 700; color: var(--c-4b5563); cursor: pointer; white-space: nowrap; touch-action: manipulation; }
+.tab-btn.active { color: #fff; background: #15803d; border-color: #15803d; font-weight: 800; box-shadow: 0 2px 7px rgba(21,128,61,0.4); }
 
 #tab-panels { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
 .tab-panel { display: none; flex-direction: column; gap: 8px; padding: 10px 12px; }
@@ -1625,7 +1597,8 @@ input[type=time] { background: var(--c-f5f7f9); border: 1px solid var(--c-d8dee6
 
   #header { padding: 10px 12px; }
   #header h1 { font-size: 0.95rem; }
-  .tab-btn { font-size: 0.78rem; padding: 10px 4px; }
+  .tab-btn { font-size: 0.9rem; padding: 12px 4px; }
+  #tab-bar { padding: 8px 10px; gap: 7px; }
 
   #mushroom-dwell-row *, #flower-settings *, #circle-settings * { font-size: 0.82rem !important; }
   #mushroom-dwell-row input, #flower-settings input, #circle-settings input { padding: 6px 8px !important; }
@@ -1930,16 +1903,6 @@ input[type=time] { background: var(--c-f5f7f9); border: 1px solid var(--c-d8dee6
         ⬆ 立即更新
       </button>
       <div style="font-size:0.56rem;color:var(--c-9ca3af)">需要 iPhone USB 連線提供網路</div>
-
-      <div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--c-d8dee6)">
-        <div style="font-size:0.65rem;color:#d97706;font-weight:bold;margin-bottom:4px">🧪 實驗性：WiFi 直連（免插線）</div>
-        <div style="font-size:0.56rem;color:var(--c-9ca3af);margin-bottom:6px">先用 USB 插著手機、完成連線一次，按下方按鈕開啟手機的 WiFi 同步能力。之後再拔線試試「🔌 連線手機」看能不能不靠 USB 連上（不保證成功，失敗請照舊插線用）</div>
-        <button id="btn-wifisync-enable" onclick="enableWifiSync()" style="background:#d97706;color:#fff;border:none;border-radius:5px;padding:7px;font-size:0.66rem;cursor:pointer;width:100%">
-          🛜 開啟 WiFi 直連（需先插線）
-        </button>
-        <div id="wifisync-result" style="display:none;font-size:0.6rem;color:var(--c-374151);line-height:1.5;padding:6px;background:var(--c-fef3c7);border-radius:4px;margin-top:5px"></div>
-      </div>
-    
         </div>
       </details>
     </div>
@@ -3042,28 +3005,6 @@ async function updateBattery(){
 }
 updateBattery();
 setInterval(updateBattery, 10000);
-
-// ── 實驗性：WiFi 直連測試 ──
-async function enableWifiSync(){
-  const btn=document.getElementById('btn-wifisync-enable');
-  const res=document.getElementById('wifisync-result');
-  btn.disabled=true; btn.textContent='⏳ 設定中...';
-  res.style.display='block'; res.textContent='執行中，請確認手機已解鎖且插著 USB…';
-  try {
-    const r=await(await fetch('/api/experimental/wifi_sync_enable',{method:'POST'})).json();
-    if (r.ok) {
-      res.style.background='var(--c-dcfce7)'; res.style.color='var(--c-15803d)';
-      res.textContent='✅ 已開啟 WiFi 同步。現在可以試著拔掉 USB 線，再按「🔌 連線手機」測試看看。';
-    } else {
-      res.style.background='var(--c-fee2e2)'; res.style.color='var(--c-dc2626)';
-      res.textContent='❌ 設定失敗：'+(r.output||'未知錯誤')+'（請確認手機已用 USB 連線且螢幕解鎖）';
-    }
-  } catch(e) {
-    res.style.background='var(--c-fee2e2)'; res.style.color='var(--c-dc2626)';
-    res.textContent='❌ 連線錯誤：'+e;
-  }
-  btn.disabled=false; btn.textContent='🛜 開啟 WiFi 直連（需先插線）';
-}
 
 const OTA_URL='https://gpsikmin2026.github.io/update/version.json';
 let _otaInfo=null;   // 手機中繼模式下暫存的遠端版本資訊
@@ -4230,12 +4171,21 @@ PMD3 = "/home/pikmin/.local/bin/pymobiledevice3"
 
 
 def check_iphone():
-    try:
-        result = subprocess.run(["ideviceinfo", "-k", "UniqueDeviceID"],
-                                capture_output=True, text=True, timeout=5)
-        return result.returncode == 0 and len(result.stdout.strip()) >= 20
-    except Exception:
-        return False
+    def _probe():
+        try:
+            result = subprocess.run(["ideviceinfo", "-k", "UniqueDeviceID"],
+                                    capture_output=True, text=True, timeout=5)
+            return result.returncode == 0 and len(result.stdout.strip()) >= 20
+        except Exception:
+            return False
+    if _probe():
+        return True
+    # usbmuxd 在手機 USB 拔線瞬間容易卡進壞狀態（socket ENOTCONN），
+    # 重啟一次再試，避免使用者要手動 SSH 進來 systemctl restart
+    subprocess.run(["sudo", "systemctl", "restart", "usbmuxd-persistent"],
+                   capture_output=True, timeout=10)
+    time.sleep(3)
+    return _probe()
 
 
 def fix_dns():
@@ -4265,7 +4215,11 @@ def ensure_tunneld():
             print("  ✅ tunneld 已在執行中且有裝置")
             return None
         print("  🔄 tunneld 無裝置，重新啟動...")
-        os.system("sudo pkill -f 'pymobiledevice3 remote tunneld' 2>/dev/null")
+        # 不用 pkill -f：pattern 字串會出現在呼叫它自己的 shell 命令列裡，可能誤殺呼叫者
+        pgrep = subprocess.run(["pgrep", "-f", "pymobiledevice3 remote tunneld"],
+                               capture_output=True, text=True, timeout=5)
+        for pid in pgrep.stdout.split():
+            subprocess.run(["sudo", "kill", "-9", pid], capture_output=True, timeout=5)
         time.sleep(2)
     except Exception:
         pass
