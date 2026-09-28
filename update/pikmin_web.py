@@ -3,7 +3,7 @@
 GPsikmin Web UI
 執行：python3 pikmin_web.py
 """
-VERSION = "1.5.25"
+VERSION = "1.5.26"
 
 import asyncio
 import fcntl
@@ -284,9 +284,30 @@ def haversine(lat1, lng1, lat2, lng2) -> float:
 
 
 def get_rsd():
-    data = requests.get(TUNNELD_URL, timeout=3).json()
+    global tunneld_proc
+    try:
+        data = requests.get(TUNNELD_URL, timeout=3).json()
+    except Exception:
+        data = None
     if not data:
-        raise RuntimeError("tunneld 沒有偵測到 iPhone")
+        # tunneld 掛了或還沒啟動（例如手機鎖螢幕後 tunnel 斷線）：自動修復一次，不要求使用者手動重新連線手機
+        if _tunneld_starting:
+            for _ in range(15):
+                time.sleep(1)
+                try:
+                    data = requests.get(TUNNELD_URL, timeout=2).json()
+                    if data:
+                        break
+                except Exception:
+                    pass
+        else:
+            tunneld_proc = ensure_tunneld()
+            try:
+                data = requests.get(TUNNELD_URL, timeout=3).json()
+            except Exception:
+                data = None
+    if not data:
+        raise RuntimeError("tunneld 沒有偵測到 iPhone，請確認手機已解鎖並信任此電腦後重試")
     udid = list(data.keys())[0]
     t = data[udid][0]
     return t["tunnel-address"], t["tunnel-port"]
