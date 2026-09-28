@@ -1,7 +1,7 @@
 {
-  "version": "1.5.24",
+  "version": "1.5.25",
   "url": "https://gpsikmin2026.github.io/update/pikmin_web.py",
-  "sha256": "8d9dce3e491a018950d8693bcdd763f5d3fe5e9e39bfe9c9e071c04bd9a4b2b7",
-  "sig": "BPIUQkG5dN9VrzlFHwJBlaFXLMyPZ0kekMi1I4kpdiWcmHQ39Lbo0sAxu5IdicdOJEa2B1zM/5Lde1QhaEGIAg==",
-  "changelog": "速度預設值改為 18 km/h"
+  "sha256": "a57d2f382b7bb20498f16ebed6e0317701d90465fd4fbebcfc23a782826de6ce",
+  "sig": "NVq8UPlzxiUR9Ivgb3PHLo4WoGf4V8I8ZLA86x/cORMAx3cgCENCeX5mIQYANtaBmCM6cZjGYvxFXldMFMTqDw==",
+  "changelog": "分頁列(移動/標記/路線/更多)改實心綠底白字卡片樣式，跟下方模式列區隔更明顯"
 }
