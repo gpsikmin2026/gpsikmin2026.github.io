@@ -1,7 +1,7 @@
 {
-  "version": "1.5.25",
+  "version": "1.5.26",
   "url": "https://gpsikmin2026.github.io/update/pikmin_web.py",
-  "sha256": "a57d2f382b7bb20498f16ebed6e0317701d90465fd4fbebcfc23a782826de6ce",
-  "sig": "NVq8UPlzxiUR9Ivgb3PHLo4WoGf4V8I8ZLA86x/cORMAx3cgCENCeX5mIQYANtaBmCM6cZjGYvxFXldMFMTqDw==",
-  "changelog": "分頁列(移動/標記/路線/更多)改實心綠底白字卡片樣式，跟下方模式列區隔更明顯"
+  "sha256": "ad9087dd90ccb31636b5cfaab1901ba47a378ad88b6f97877246eaf401eff5f5",
+  "sig": "Cm1yh4Xmw2npivU/GRqccXxoExpGKptJD3i+GicI3Gq/QvbOPn3kWMOsgEkxbkzdLOe6opZSRRH7RmwpznplCw==",
+  "changelog": "1.5.26: tunneld 斷線自動修復（手機鎖螢幕/USB短斷後不用手動重新連線手機，GPS功能自動重啟tunneld重試）"
 }
