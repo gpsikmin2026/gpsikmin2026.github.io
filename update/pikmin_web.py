@@ -3,7 +3,7 @@
 GPsikmin Web UI
 執行：python3 pikmin_web.py
 """
-VERSION = "1.5.30"
+VERSION = "1.5.31"
 
 import asyncio
 import base64
@@ -141,7 +141,6 @@ state = {
     "joystick_step_m": 100,
 }
 stop_flag = threading.Event()
-goldpot_flag = threading.Event()
 hold_stop_flag = threading.Event()
 gps_thread = None
 tunneld_proc = None
@@ -257,30 +256,6 @@ async def _reconnect_dvt(loc, dvt, rsd):
     return None
 
 
-async def _goldpot_countdown(loc):
-    """3-2-1 倒數後送 loc.clear()，讓 isSimulatedBySoftware 瞬間清除。回傳是否正常完成。"""
-    DRIFT_MAX = 4e-5
-    DRIFT_STEP = 6e-6
-    lat, lng = state["lat"], state["lng"]
-    drift_lat = drift_lng = 0.0
-    for c in range(3, 0, -1):
-        if stop_flag.is_set():
-            return False
-        drift_lat = max(-DRIFT_MAX, min(DRIFT_MAX, drift_lat + random.gauss(0, DRIFT_STEP)))
-        drift_lng = max(-DRIFT_MAX, min(DRIFT_MAX, drift_lng + random.gauss(0, DRIFT_STEP)))
-        if not await _safe_loc_set(loc, lat + drift_lat, lng + drift_lng):
-            if stop_flag.is_set():
-                return False
-        event_queue.put({"goldpot_countdown": c, "lat": lat, "lng": lng})
-        await asyncio.sleep(1)
-    try:
-        await asyncio.wait_for(loc.clear(), timeout=3.0)
-    except Exception:
-        pass
-    event_queue.put({"goldpot_go": True})
-    return True
-
-
 def haversine(lat1, lng1, lat2, lng2) -> float:
     R = 6371000
     p1, p2 = math.radians(lat1), math.radians(lat2)
@@ -340,7 +315,6 @@ async def _simulate(route, speed_kmh, loop_mode):
     send_count = 0
 
     loc, dvt, rsd = await _make_dvt_conn()
-    clear_called = False
     try:
         while not stop_flag.is_set():
             step = direction
@@ -356,11 +330,6 @@ async def _simulate(route, speed_kmh, loop_mode):
 
                 for s in range(seg_steps):
                     if stop_flag.is_set():
-                        break
-                    if goldpot_flag.is_set():
-                        goldpot_flag.clear()
-                        clear_called = await _goldpot_countdown(loc)
-                        stop_flag.set()
                         break
                     t = s / seg_steps
                     lat = lat1 + (lat2 - lat1) * t
@@ -432,7 +401,7 @@ async def _simulate(route, speed_kmh, loop_mode):
         _hs = hold_stop_flag.is_set()
         hold_stop_flag.clear()
         event_queue.put({"hold_stopped": True} if _hs else {"stopped": True})
-        await _safe_cleanup(loc, dvt, rsd, skip_clear=clear_called or _hs)
+        await _safe_cleanup(loc, dvt, rsd, skip_clear=_hs)
 
 
 def _gps_worker(route, speed_kmh, loop_mode):
@@ -586,7 +555,6 @@ async def _patrol_simulate(waypoints, dwell_sec, patrol_loop=False):
     DRIFT_MAX = 4e-5
     DRIFT_STEP = 6e-6
 
-    clear_called = False
     try:
         lap = 0
         while not stop_flag.is_set():
@@ -599,11 +567,6 @@ async def _patrol_simulate(waypoints, dwell_sec, patrol_loop=False):
                 elapsed = 0
                 state.update({"patrol_idx": idx + 1, "lat": lat, "lng": lng, "patrol_lap": lap})
                 while elapsed < dwell_sec and not stop_flag.is_set():
-                    if goldpot_flag.is_set():
-                        goldpot_flag.clear()
-                        clear_called = await _goldpot_countdown(loc)
-                        stop_flag.set()
-                        break
                     drift_lat = max(-DRIFT_MAX, min(DRIFT_MAX, drift_lat + random.gauss(0, DRIFT_STEP)))
                     drift_lng = max(-DRIFT_MAX, min(DRIFT_MAX, drift_lng + random.gauss(0, DRIFT_STEP)))
                     if not await _safe_loc_set(loc, lat + drift_lat, lng + drift_lng):
@@ -638,7 +601,7 @@ async def _patrol_simulate(waypoints, dwell_sec, patrol_loop=False):
         _hs = hold_stop_flag.is_set()
         hold_stop_flag.clear()
         event_queue.put({"hold_stopped": True} if _hs else {"stopped": True})
-        await _safe_cleanup(loc, dvt, rsd, skip_clear=clear_called or _hs)
+        await _safe_cleanup(loc, dvt, rsd, skip_clear=_hs)
 
 
 def _patrol_worker(waypoints, dwell_sec, patrol_loop=False):
@@ -794,14 +757,6 @@ async def _circle_simulate(center_lat, center_lng, radius_m, speed_kmh):
 
 def _circle_worker(center_lat, center_lng, radius_m, speed_kmh):
     asyncio.run(_circle_simulate(center_lat, center_lng, radius_m, speed_kmh))
-
-
-@app.route("/start_goldpot", methods=["POST"])
-def start_goldpot():
-    if not state["running"]:
-        return jsonify({"error": "需要在模擬執行中才能使用"}), 400
-    goldpot_flag.set()
-    return jsonify({"ok": True})
 
 
 @app.route("/stop", methods=["POST"])
@@ -1577,7 +1532,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; b
 #btn-start:disabled { background: var(--c-eef1f4); color: var(--c-6b7280); cursor: not-allowed; }
 #btn-stop     { background: #ef4444; color: #fff; }
 #btn-hold-stop{ background: #d97706; color: #fff; }
-#btn-goldpot  { background: #92400e; color: #fff; }
 .mini-row { display: flex; gap: 6px; }
 .mini-row .big-btn { flex: 1; padding: 6px; font-size: 0.68rem; }
 #btn-undo, #btn-clear { background: var(--c-eef1f4); color: var(--c-374151); }
@@ -1846,7 +1800,6 @@ input[type=time] { background: var(--c-f5f7f9); border: 1px solid var(--c-d8dee6
       <button class="big-btn" id="btn-start" onclick="startSim()" disabled>▶ 開始</button>
       <button class="big-btn" id="btn-stop" onclick="stopSim()" style="display:none">⏹ 停止</button>
       <button class="big-btn" id="btn-hold-stop" onclick="holdStopSim()" style="display:none" title="凍結GPS在當前位置（不清除定位），方便走向目標後繼續">⏸ 臨停GPS</button>
-      <button class="big-btn" id="btn-goldpot" onclick="startGoldpot()" style="display:none" title="凍結GPS在金盆位置，倒數後斷線DVT，趁機互動金盆（需配合 IPLocate）">🪣 拉金盆</button>
     </div>
   </div>
 
@@ -2374,7 +2327,6 @@ async function startFlower() {
   document.getElementById('btn-start').style.display = 'none';
   document.getElementById('btn-stop').style.display = '';
   document.getElementById('btn-hold-stop').style.display = '';
-  document.getElementById('btn-goldpot').style.display = '';
   document.getElementById('progress-fill').style.width = '0%';
   document.getElementById('progress-text').textContent = '';
   document.getElementById('stat-walked').style.display = 'none';
@@ -2461,7 +2413,6 @@ async function startCircle() {
   document.getElementById('btn-start').style.display = 'none';
   document.getElementById('btn-stop').style.display = '';
   document.getElementById('btn-hold-stop').style.display = '';
-  document.getElementById('btn-goldpot').style.display = '';
   document.getElementById('progress-fill').style.width = '0%';
   document.getElementById('progress-text').textContent = '';
   document.getElementById('stat-walked').style.display = 'none';
@@ -2496,7 +2447,6 @@ async function startPatrol() {
   document.getElementById('btn-start').style.display = 'none';
   document.getElementById('btn-stop').style.display = '';
   document.getElementById('btn-hold-stop').style.display = '';
-  document.getElementById('btn-goldpot').style.display = '';
   document.getElementById('progress-fill').style.width = '0%';
   document.getElementById('progress-text').textContent = '0%';
   document.getElementById('stat-walked').style.display = 'none';
@@ -2540,7 +2490,6 @@ async function startSim() {
   document.getElementById('btn-start').style.display='none';
   document.getElementById('btn-stop').style.display='';
   document.getElementById('btn-hold-stop').style.display='';
-  document.getElementById('btn-goldpot').style.display='';
   document.getElementById('progress-fill').style.width='0%';
   document.getElementById('progress-text').textContent='0%';
   document.getElementById('stat-walked').style.display='';
@@ -2614,18 +2563,6 @@ function connectSSE() {
       document.getElementById('info-text').textContent = `🔄 第 ${d.patrol_lap} 圈完成，繼續循環...`;
     if (d.patrol_done)
       document.getElementById('info-text').textContent = '✅ 尋菇完成！';
-    if (d.goldpot_countdown != null) {
-      document.getElementById('goldpot-timer').textContent = d.goldpot_countdown;
-      document.getElementById('info-text').textContent = `🪣 凍結GPS 倒數 ${d.goldpot_countdown}s...`;
-    }
-    if (d.goldpot_go) {
-      const ov = document.getElementById('goldpot-overlay');
-      ov.style.background = 'rgba(120,80,0,0.95)';
-      document.getElementById('goldpot-title').textContent = '立刻互動金盆！';
-      document.getElementById('goldpot-sub').textContent = 'DVT 已斷線，趕快在 Pikmin Bloom 互動（搭配 IPLocate 效果最佳）';
-      document.getElementById('goldpot-timer').textContent = '⚡';
-      document.getElementById('info-text').textContent = '🪣 DVT 已斷線！立刻互動金盆！';
-    }
   };
 }
 
@@ -2633,22 +2570,6 @@ async function stopSim() {
   userStopped = true;
   await fetch('/stop',{method:'POST'});
   document.getElementById('info-text').textContent='🛑 停止中...';
-}
-
-async function startGoldpot() {
-  const r = await fetch('/start_goldpot', {method: 'POST'});
-  const data = await r.json();
-  if (!data.ok) { alert('失敗：' + (data.error||'')); return; }
-
-  document.getElementById('btn-goldpot').style.display = 'none';
-  document.getElementById('info-text').textContent = '🪣 倒數中，快切到 Pikmin Bloom...';
-
-  const ov = document.getElementById('goldpot-overlay');
-  ov.style.background = 'rgba(0,0,0,0.9)';
-  ov.style.display = 'flex';
-  document.getElementById('goldpot-title').textContent = '快切到 Pikmin Bloom！';
-  document.getElementById('goldpot-sub').textContent = '切過去後一直不斷點金盆，3 秒後自動清除 DVT';
-  document.getElementById('goldpot-timer').textContent = '3';
 }
 
 function onStopped() {
@@ -2659,7 +2580,6 @@ function onStopped() {
   document.getElementById('btn-stop').style.display='none';
   document.getElementById('btn-hold-stop').style.display='none';
   document.getElementById('btn-start').style.display='';
-  document.getElementById('btn-goldpot').style.display='none';
   document.getElementById('stat-eta').style.display='none';
   if (afkMode && !userStopped) {
     autoReconnect();
@@ -2702,7 +2622,6 @@ function updateUI() {
   document.getElementById('btn-save').disabled = routeCoords.length < 2;
   const sel = document.getElementById('route-select');
   document.getElementById('btn-export').disabled = !sel || !sel.value;
-  document.getElementById('btn-goldpot').style.display = (phoneConnected && isRunning) ? '' : 'none';
   syncModeSeg();
 }
 
@@ -3511,7 +3430,6 @@ function onHoldStopped() {
   if (frozen) addWaypoint(frozen.lat, frozen.lng);
   document.getElementById('btn-stop').style.display = 'none';
   document.getElementById('btn-hold-stop').style.display = 'none';
-  document.getElementById('btn-goldpot').style.display = 'none';
   document.getElementById('stat-eta').style.display = 'none';
   document.getElementById('btn-start').style.display = '';
   document.getElementById('info-text').textContent = '⏸ GPS 已凍結，點地圖加目標點後按 ▶ 開始即可走過去（單程，已自動關閉折返）';
@@ -4356,18 +4274,6 @@ function removeMapOverlay() {
 
     </div>
   </div>
-</div>
-
-<div id="goldpot-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;
-  background:rgba(0,0,0,0.9);z-index:9999;align-items:center;justify-content:center;flex-direction:column;gap:14px">
-  <div style="font-size:4rem">🪣</div>
-  <div id="goldpot-title" style="font-size:1.8rem;color:#FFD700;font-weight:bold;text-align:center;padding:0 20px">凍結GPS中，準備互動</div>
-  <div id="goldpot-sub" style="color:var(--c-6b7280);font-size:0.95rem;text-align:center;padding:0 20px">切換到 Pikmin Bloom，倒數結束後立刻互動金盆</div>
-  <div id="goldpot-timer" style="font-size:4rem;color:#fff;font-weight:bold;min-width:60px;text-align:center"></div>
-  <button onclick="document.getElementById('goldpot-overlay').style.display='none'"
-    style="padding:10px 28px;font-size:1rem;background:#555;color:#fff;border:none;border-radius:8px;cursor:pointer;margin-top:8px">
-    關閉
-  </button>
 </div>
 
 </body>
