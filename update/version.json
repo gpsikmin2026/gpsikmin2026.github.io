@@ -1,7 +1,7 @@
 {
-  "version": "1.5.29",
+  "version": "1.5.30",
   "url": "https://gpsikmin2026.github.io/update/pikmin_web.py",
-  "sha256": "66486661592d2a57adc28079aed3b138e38aa7d9c5017111ab65e1dce56fef76",
-  "sig": "6fjZao+L+zjN/6xmBP5rqHoipsNq34juvX4V+Hex83ocFtQTZUMbxQQZuVpXzUcf0lQa5gt7Gmb71hnAPpYCCQ==",
-  "changelog": "新增診斷回報：⚙️更多→🩺傳送診斷資訊，遇到問題一鍵加密回傳給客服"
+  "sha256": "c7e7f798e1b874cc55b166470c86baeba5854f715daa0126db7b7a84151ea033",
+  "sig": "AFftv1VTIFF115BZowFRfRkuh7Lcf6ab+hF7M5XvzcKoLPsIEoYBGaPWqeRxca5+yxD+npJn7pX6rTVZUZDcBw==",
+  "changelog": "說明書新增「傳送診斷資訊」章節"
 }
