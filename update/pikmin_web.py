@@ -3,7 +3,7 @@
 GPsikmin Web UI
 執行：python3 pikmin_web.py
 """
-VERSION = "1.5.26"
+VERSION = "1.5.27"
 
 import asyncio
 import fcntl
@@ -1305,7 +1305,7 @@ def api_setup_state():
 
 @app.route("/api/setup/detect_phone", methods=["POST"])
 def api_setup_detect_phone():
-    subprocess.run(["sudo", "systemctl", "restart", "usbmuxd-persistent"],
+    subprocess.run(["sudo", "-n", "bash", "-c", "systemctl restart usbmuxd-persistent"],
                    capture_output=True, timeout=10)
     time.sleep(3)
     r = subprocess.run(["idevicepair", "pair"], capture_output=True, text=True, timeout=6)
@@ -4203,7 +4203,7 @@ def check_iphone():
         return True
     # usbmuxd 在手機 USB 拔線瞬間容易卡進壞狀態（socket ENOTCONN），
     # 重啟一次再試，避免使用者要手動 SSH 進來 systemctl restart
-    subprocess.run(["sudo", "systemctl", "restart", "usbmuxd-persistent"],
+    subprocess.run(["sudo", "-n", "bash", "-c", "systemctl restart usbmuxd-persistent"],
                    capture_output=True, timeout=10)
     time.sleep(3)
     return _probe()
