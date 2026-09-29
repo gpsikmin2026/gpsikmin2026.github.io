@@ -3,7 +3,7 @@
 GPsikmin Web UI
 執行：python3 pikmin_web.py
 """
-VERSION = "1.5.29"
+VERSION = "1.5.30"
 
 import asyncio
 import base64
@@ -4096,7 +4096,7 @@ function removeMapOverlay() {
             <tr><td>地圖左下角</td><td>單一輸入框：輸入地名搜尋，或輸入座標直接跳轉</td></tr>
             <tr><td>📍 標記</td><td>新增標記（🍄🌸⭐📍 + 標記名稱）、📋 我的標記</td></tr>
             <tr><td>📁 路線</td><td>儲存／載入／刪除、匯出／匯入、GPX、🗺️ 熱點</td></tr>
-            <tr><td>⚙️ 更多</td><td>可展開收合的三區：🕹️ 搖桿、🗾 疊圖輔助、🔄 軟體更新</td></tr>
+            <tr><td>⚙️ 更多</td><td>可展開收合的四區：🕹️ 搖桿、🗾 疊圖輔助、🔄 軟體更新、🩺 傳送診斷資訊</td></tr>
           </table>
         </div>
       </div>
@@ -4309,6 +4309,21 @@ function removeMapOverlay() {
             <li>更新包有數位簽章，盒子會自己驗證，不是官方發布的檔案一律拒絕</li>
           </ul>
           <div class="tip">更新途中請勿拔電。若出現「寫入失敗」等錯誤訊息，請截圖回報</div>
+        </div>
+      </div>
+
+      <div class="hs">
+        <button class="hs-btn" onclick="toggleHs('h17','ha17')">🩺 傳送診斷資訊 <span id="ha17">▸</span></button>
+        <div class="hs-body" id="h17">
+          <ul>
+            <li>遇到問題（例如連不上、進度卡住、遊戲進不去）時，到「<b>⚙️ 更多</b>」分頁，展開「<b>🩺 傳送診斷資訊</b>」→ 按「📤 傳送診斷給客服」</li>
+            <li>約 20 秒後會出現<b>診斷代碼</b>（例如 <code>8873-W7QH</code>），請把代碼<b>告訴客服</b>，客服就能看到盒子的狀況</li>
+            <li>送出的內容有：軟體版本、模擬狀態、手機連線狀態、網路狀態與系統紀錄。內容已<b>加密</b>，只有客服能解開，不含您的帳號密碼；想知道送了什麼，可點「查看將送出的內容」</li>
+            <li><b>需要網路</b>：手機要開著<b>行動數據</b>（手機連盒子 WiFi 時，由手機幫忙送出）</li>
+            <li>手機沒有網路、顯示送出失敗時，按「<b>⬇ 下載診斷檔</b>」，再用 <b>LINE</b> 把檔案傳給客服</li>
+            <li>建議在<b>問題正在發生時</b>按，不要等重開機後才按，這樣紀錄最準</li>
+          </ul>
+          <div class="tip">診斷資訊只在您按下按鈕時才會收集與送出，平時不會自動回傳</div>
         </div>
       </div>
 
