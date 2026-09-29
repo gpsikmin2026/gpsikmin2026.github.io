@@ -1,7 +1,7 @@
 {
-  "version": "1.5.28",
+  "version": "1.5.29",
   "url": "https://gpsikmin2026.github.io/update/pikmin_web.py",
-  "sha256": "e9f236c9b9cba048f8e2d74e176f5d0e45061a0cfe31328dc88ff20fda7315f8",
-  "sig": "AqmUScNf9Ti52Wb132BVAA2lsLbFoXDZa/6xC3MvoJe6LGEKhnnQ/rFF8x+l1fTQ7aKww6U/7awTAUCmccJeAw==",
-  "changelog": "1.5.28: 按「開始模擬」時若 usbmuxd 卡死，會先自動重啟並重新偵測 iPhone 再啟動 tunneld，不再直接顯示 Connection refused"
+  "sha256": "66486661592d2a57adc28079aed3b138e38aa7d9c5017111ab65e1dce56fef76",
+  "sig": "6fjZao+L+zjN/6xmBP5rqHoipsNq34juvX4V+Hex83ocFtQTZUMbxQQZuVpXzUcf0lQa5gt7Gmb71hnAPpYCCQ==",
+  "changelog": "新增診斷回報：⚙️更多→🩺傳送診斷資訊，遇到問題一鍵加密回傳給客服"
 }

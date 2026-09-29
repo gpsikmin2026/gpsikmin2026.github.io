@@ -3,9 +3,10 @@
 GPsikmin Web UI
 執行：python3 pikmin_web.py
 """
-VERSION = "1.5.28"
+VERSION = "1.5.29"
 
 import asyncio
+import base64
 import fcntl
 import hashlib
 import json
@@ -20,12 +21,17 @@ import subprocess
 import sys
 import threading
 import time
+import zlib
 
 from datetime import datetime
 
 import requests
 from flask import Flask, Response, jsonify, request, send_file
 from cryptography.fernet import Fernet, InvalidToken
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
+from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 _ROUTE_KEY = Fernet(b"7_HitDvxbwD5nZPlKdg-P3leGShTTSTYkzCGYMuwyYg=")
 
@@ -964,6 +970,111 @@ def api_update_upload():
         return jsonify({"error": f"寫入失敗：{e}"}), 500
     return jsonify({"ok": True, "new_version": version,
                      "message": "更新完成，3 秒後自動重啟..."})
+
+# ── 診斷回報 ─────────────────────────────────────────────
+# 診斷內容含 log/序號，而本檔會公開發布 → 用只有客服持有私鑰的 X25519+ChaCha20 加密後才送出。
+# 送出走「手機瀏覽器 → ntfy.sh」（盒子自己是 AP 沒網路，同 OTA 中繼思路）。
+_DIAG_PUBKEY = "a4LJFbWUcm10jpwppq0FnC0jdaiPL6kTqi5awlqNt0U="
+DIAG_TOPIC = "gpsikmin-diag-958ac4b712e816f04b04"
+
+
+def _diag_encrypt(text):
+    eph = X25519PrivateKey.generate()
+    shared = eph.exchange(X25519PublicKey.from_public_bytes(base64.b64decode(_DIAG_PUBKEY)))
+    key = HKDF(hashes.SHA256(), 32, None, b"gpsikmin-diag").derive(shared)
+    nonce = os.urandom(12)
+    ct = ChaCha20Poly1305(key).encrypt(nonce, zlib.compress(text.encode("utf-8"), 9), None)
+    eph_pub = eph.public_key().public_bytes_raw()
+    return "GPDIAG1." + base64.urlsafe_b64encode(eph_pub + nonce + ct).decode()
+
+
+def _diag_box_id():
+    try:
+        mac = pathlib.Path("/sys/class/net/wlan0/address").read_text().strip().replace(":", "").upper()
+        return mac[-4:]
+    except Exception:
+        return "????"
+
+
+def _diag_sh(cmd, timeout=8, tail=None):
+    """跑一個 shell 指令回傳輸出文字（失敗也回傳原因，不丟例外）。"""
+    try:
+        r = subprocess.run(["bash", "-c", cmd], capture_output=True, text=True, timeout=timeout)
+        out = (r.stdout + r.stderr).strip()
+        if tail:
+            out = "\n".join(out.splitlines()[-tail:])
+        return out or f"(無輸出 rc={r.returncode})"
+    except subprocess.TimeoutExpired:
+        return f"(逾時 {timeout}s)"
+    except Exception as e:
+        return f"(執行失敗：{e})"
+
+
+def _diag_journal(unit, lines):
+    out = _diag_sh(f"journalctl -u {unit} -n {lines} --no-pager -o short-iso 2>&1", 10)
+    if "Hint:" in out or "not seeing messages" in out or "No journal files" in out:
+        out = _diag_sh(f"sudo -n bash -c 'journalctl -u {unit} -n {lines} --no-pager -o short-iso' 2>&1", 10)
+    return out
+
+
+def _collect_diag():
+    sec = []
+
+    def add(title, body):
+        sec.append(f"===== {title} =====\n{body}\n")
+
+    up = _diag_sh("uptime -p; cat /proc/loadavg", 3)
+    add("基本", "\n".join([
+        f"盒子ID: {_diag_box_id()}",
+        f"版本: {VERSION}",
+        f"時間: {datetime.now().isoformat(timespec='seconds')}",
+        f"運行: {up}",
+        f"CPU溫度: {_diag_sh('cat /sys/class/thermal/thermal_zone0/temp', 2)} (毫度C)",
+        f"記憶體: {_diag_sh('free -m | sed -n 1,2p', 3)}",
+        f"磁碟: {_diag_sh('df -h / /data 2>/dev/null', 3)}",
+        f"電源/降頻: {_diag_sh('vcgencmd get_throttled 2>&1', 3)}",
+    ]))
+    add("模擬狀態", "\n".join([
+        f"state: {json.dumps(state, ensure_ascii=False)}",
+        f"模擬執行緒存活: {bool(gps_thread and gps_thread.is_alive())}",
+        f"進度事件佇列長度: {event_queue.qsize()}",
+        f"tunneld 子程序: {'存活' if tunneld_proc and tunneld_proc.poll() is None else '無/已結束'}",
+    ]))
+    try:
+        tj = requests.get(TUNNELD_URL, timeout=2).json()
+        tun = f"回應正常，裝置數={len(tj)}"
+    except Exception as e:
+        tun = f"連不上 tunneld：{e}"
+    add("tunneld", tun + "\n程序: " + _diag_sh("pgrep -af 'remote [t]unneld' | head -3", 3))
+    add("服務狀態", _diag_sh("for u in gpsikmin usbmuxd usbmuxd-persistent; do echo \"$u: $(systemctl is-active $u 2>&1)\"; done", 5))
+    add("iPhone", "\n".join([
+        f"ProductVersion: {_diag_sh('ideviceinfo -k ProductVersion', 6)}",
+        f"ProductType: {_diag_sh('ideviceinfo -k ProductType', 6)}",
+        f"DeveloperMode: {_diag_sh('ideviceinfo -q com.apple.security.mac.amfi -k DeveloperModeStatus', 6)}",
+        f"usbmux list: {_diag_sh(f'{PMD3} usbmux list 2>&1 | head -c 600', 8)}",
+        f"公司描述檔(MDM): {_diag_sh(f'{PMD3} profile list 2>&1 | head -c 800', 10)}",
+    ]))
+    add("網路", "\n".join([
+        _diag_sh("ip -brief addr", 3),
+        "路由: " + _diag_sh("ip route | head -5", 3),
+        "外網: " + _diag_sh("curl -s -m 4 -o /dev/null -w '%{http_code}' https://ntfy.sh/ || echo 失敗", 6),
+    ]))
+    add("USB 核心訊息(近40行)", _diag_sh("dmesg 2>&1 | grep -iE 'usb|ipheth|error|under-voltage' | tail -40", 5))
+    add("gpsikmin 服務 log(近150行)", _diag_journal("gpsikmin", 150))
+    add("usbmuxd log(近40行)", _diag_journal("usbmuxd-persistent", 40))
+    return "\n".join(sec)
+
+
+@app.route("/api/diag", methods=["POST"])
+def api_diag():
+    """收集診斷資訊。回傳明文（給使用者過目）與加密後的 blob（送出/下載用）。"""
+    try:
+        text = _collect_diag()
+        return jsonify({"box_id": _diag_box_id(), "version": VERSION, "topic": DIAG_TOPIC,
+                        "text": text, "blob": _diag_encrypt(text)})
+    except Exception as e:
+        return jsonify({"error": f"收集診斷失敗：{e}"}), 500
+
 
 def _delayed_restart():
     """更新後重啟自己。盒子 sudoers 只放行 bash/python3/pkill/kill（沒有 systemctl），
@@ -1927,6 +2038,23 @@ input[type=time] { background: var(--c-f5f7f9); border: 1px solid var(--c-d8dee6
         ⬆ 立即更新
       </button>
       <div style="font-size:0.56rem;color:var(--c-9ca3af)">需要 iPhone USB 連線提供網路</div>
+        </div>
+      </details>
+      <details class="more-sec" id="sec-diag">
+        <summary>🩺 傳送診斷資訊</summary>
+        <div class="more-body">
+      <div style="font-size:0.62rem;color:var(--c-374151);line-height:1.6">遇到問題時按下方按鈕，會收集盒子狀態與紀錄（已加密，只有客服能看）並送出。</div>
+      <button id="btn-diag-send" onclick="sendDiag()" style="background:#5b8dee;color:#fff;border:none;border-radius:5px;padding:8px;font-size:0.7rem;cursor:pointer;width:100%">
+        📤 傳送診斷給客服
+      </button>
+      <div id="diag-result" style="display:none;font-size:0.62rem;color:var(--c-374151);line-height:1.6;padding:8px;background:var(--c-f5f7f9);border-radius:4px"></div>
+      <button id="btn-diag-dl" onclick="downloadDiag()" style="display:none;background:#6b7280;color:#fff;border:none;border-radius:5px;padding:8px;font-size:0.7rem;cursor:pointer;width:100%">
+        ⬇ 下載診斷檔（可用 LINE 傳給客服）
+      </button>
+      <details id="diag-plain-wrap" style="display:none"><summary style="font-size:0.6rem;color:var(--c-9ca3af)">查看將送出的內容</summary>
+        <pre id="diag-plain" style="font-size:0.5rem;white-space:pre-wrap;word-break:break-all;max-height:200px;overflow:auto;color:var(--c-374151)"></pre>
+      </details>
+      <div style="font-size:0.56rem;color:var(--c-9ca3af)">送出需手機有行動網路；沒網路請用「下載診斷檔」</div>
         </div>
       </details>
     </div>
@@ -3103,6 +3231,47 @@ async function applyUpdate(){
     res.innerHTML='<span style="color:#e85050">❌ 更新異常：'+e+'</span>';
     btn.disabled=false; btn.textContent='⬆ 立即更新';
   }
+}
+
+// ── 診斷回報 ──
+let _diagData=null;
+async function sendDiag(){
+  const btn=document.getElementById('btn-diag-send');
+  const res=document.getElementById('diag-result');
+  const dl=document.getElementById('btn-diag-dl');
+  btn.disabled=true; btn.textContent='🩺 收集中（約 20 秒）...';
+  res.style.display='block'; res.innerHTML='<span style="color:var(--c-6b7280)">收集盒子資訊中，請稍候...</span>';
+  dl.style.display='none';
+  try {
+    const d=await(await fetch('/api/diag',{method:'POST'})).json();
+    if(d.error) throw new Error(d.error);
+    _diagData=d;
+    document.getElementById('diag-plain').textContent=d.text;
+    document.getElementById('diag-plain-wrap').style.display='';
+    dl.style.display='';
+    res.innerHTML='<span style="color:var(--c-6b7280)">📤 送出中...</span>';
+    const code=d.box_id+'-'+Date.now().toString(36).slice(-4).toUpperCase();
+    _diagData.code=code;
+    try {
+      const r=await fetch('https://ntfy.sh/'+d.topic+'?title='+encodeURIComponent('GPsikmin diag '+code+' v'+d.version)+'&filename=diag-'+code+'.txt',
+        {method:'PUT',body:d.blob});
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      res.innerHTML='<span style="color:var(--c-15803d)">✅ 已送出，請把診斷代碼 <b>'+code+'</b> 告訴客服</span>';
+    } catch(e){
+      res.innerHTML='<span style="color:#e85050">❌ 手機無法連網送出（'+e+'）<br>請按下方「下載診斷檔」，改用 LINE 傳給客服。診斷代碼 <b>'+code+'</b></span>';
+    }
+  } catch(e){
+    res.innerHTML='<span style="color:#e85050">❌ '+e+'</span>';
+  }
+  btn.disabled=false; btn.textContent='📤 傳送診斷給客服';
+}
+
+function downloadDiag(){
+  if(!_diagData) return;
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([_diagData.blob],{type:'text/plain'}));
+  a.download='gpsikmin-diag-'+_diagData.code+'.txt';
+  document.body.appendChild(a); a.click(); a.remove();
 }
 
 // ── 說明手冊 ──
