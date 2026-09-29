@@ -3,7 +3,7 @@
 GPsikmin Web UI
 執行：python3 pikmin_web.py
 """
-VERSION = "1.5.27"
+VERSION = "1.5.28"
 
 import asyncio
 import fcntl
@@ -301,6 +301,9 @@ def get_rsd():
                 except Exception:
                     pass
         else:
+            # usbmuxd 卡死時 ideviceinfo 會逾時，先讓 check_iphone 重啟它再啟動 tunneld
+            if not check_iphone():
+                raise RuntimeError("找不到 iPhone，請確認 USB 已接好、手機已解鎖並信任此電腦後重試")
             tunneld_proc = ensure_tunneld()
             try:
                 data = requests.get(TUNNELD_URL, timeout=3).json()
