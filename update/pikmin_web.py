@@ -3,7 +3,7 @@
 GPsikmin Web UI
 執行：python3 pikmin_web.py
 """
-VERSION = "1.5.31"
+VERSION = "1.5.32"
 
 import asyncio
 import base64
@@ -4376,12 +4376,46 @@ def get_local_ip():
         return "localhost"
 
 
+def _ensure_ap_no_gateway():
+    """AP 的 dnsmasq 不要對手機發預設閘道/DNS。
+    盒子沒有 NAT，若發了，iOS 會以為這條 Wi-Fi 能上網，遊戲流量卡死（卡「正在登入」）。
+    缺 dhcp-option=3/6 時自動補上（含 root-ro 持久層）並重啟 dnsmasq。已補過則什麼都不做。"""
+    conf = "/etc/dnsmasq.conf"
+    try:
+        txt = open(conf).read()
+    except Exception:
+        return
+    if "dhcp-range=192.168.4." not in txt:
+        return
+    lines = [l.strip() for l in txt.splitlines()]
+    if "dhcp-option=3" in lines and "dhcp-option=6" in lines:
+        return
+    script = (
+        "set -e; f=%s; [ -f $f ] || exit 0; "
+        "grep -qx 'dhcp-option=3' $f || echo 'dhcp-option=3' >> $f; "
+        "grep -qx 'dhcp-option=6' $f || echo 'dhcp-option=6' >> $f"
+    )
+    try:
+        subprocess.run(["sudo", "-n", "bash", "-c", script % conf], check=True, timeout=10)
+        if _is_overlayroot():
+            subprocess.run(["sudo", "-n", "bash", "-c", "mount -o remount,rw /media/root-ro"], check=True, timeout=10)
+            try:
+                subprocess.run(["sudo", "-n", "bash", "-c", script % "/media/root-ro/etc/dnsmasq.conf"], check=True, timeout=10)
+            finally:
+                subprocess.run(["sudo", "-n", "bash", "-c", "sync && mount -o remount,ro /media/root-ro"], timeout=10)
+        subprocess.run(["sudo", "-n", "bash", "-c", "systemctl restart dnsmasq"], timeout=20)
+        print("✅ 已設定 AP 不發預設閘道/DNS（dhcp-option=3/6）")
+    except Exception as e:
+        print(f"⚠️ 設定 AP 閘道選項失敗：{e}")
+
+
 if __name__ == "__main__":
     print("\n" + "=" * 52)
     print("  🌱  GPsikmin 啟動中...")
     print("=" * 52)
 
     fix_dns()
+    _ensure_ap_no_gateway()
     _start_mem_watchdog()
 
     def cleanup(sig=None, frame=None):
