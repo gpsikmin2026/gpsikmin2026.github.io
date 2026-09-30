@@ -1,7 +1,7 @@
 {
-  "version": "1.5.31",
+  "version": "1.5.32",
   "url": "https://gpsikmin2026.github.io/update/pikmin_web.py",
-  "sha256": "5ceb66849a401b0f1676d48fcea8d887895b99ddf8e4cdc3c18371c321a47533",
-  "sig": "ErNAaAKidhHvjhS9iefzb6ShDql3nlbg6pQsUe+dAvBzVcwK0rKJAoZv1wBun6a+4ySfURpBqJSRuLQXnma0Ag==",
-  "changelog": "移除拉金盆功能"
+  "sha256": "92db76168f1f91de8c6c20980ce517a93487603b9a3092a6a1c3d2c19d7007b6",
+  "sig": "XThYqTNfJYnH29ms4DCQuWeUJKLkKCFV9iwPwFwbwK19/dNSQkoOtqFiaQegv71vtXwEIN7pLSKhDlgFSSRMDw==",
+  "changelog": "AP 不再對手機發預設閘道/DNS，修正手機連盒子Wi-Fi時遊戲卡在「正在登入」"
 }
