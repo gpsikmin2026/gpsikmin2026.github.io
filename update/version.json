@@ -1,7 +1,7 @@
 {
-  "version": "1.5.32",
+  "version": "1.5.33",
   "url": "https://gpsikmin2026.github.io/update/pikmin_web.py",
-  "sha256": "92db76168f1f91de8c6c20980ce517a93487603b9a3092a6a1c3d2c19d7007b6",
-  "sig": "XThYqTNfJYnH29ms4DCQuWeUJKLkKCFV9iwPwFwbwK19/dNSQkoOtqFiaQegv71vtXwEIN7pLSKhDlgFSSRMDw==",
-  "changelog": "AP 不再對手機發預設閘道/DNS，修正手機連盒子Wi-Fi時遊戲卡在「正在登入」"
+  "sha256": "f7cdf390a92563e614d62e87c607cf2c0f1a1a7cb2197052a27cd01cb4153202",
+  "sig": "WMQA5+fGLPI7CnpVtNGJr+szqdyJV+dLruEKETaPEP9LVxiZY6BEfkqM4uUj8NHzu41gDEGgXeKcz5thuwEBAA==",
+  "changelog": "新增配件定位模式（外接GPS配件，需憑證；無憑證的盒子不顯示、行為不變）"
 }
