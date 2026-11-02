@@ -1,7 +1,8 @@
 {
-  "version": "1.5.33",
-  "url": "https://gpsikmin2026.github.io/update/pikmin_web.py",
-  "sha256": "f7cdf390a92563e614d62e87c607cf2c0f1a1a7cb2197052a27cd01cb4153202",
-  "sig": "WMQA5+fGLPI7CnpVtNGJr+szqdyJV+dLruEKETaPEP9LVxiZY6BEfkqM4uUj8NHzu41gDEGgXeKcz5thuwEBAA==",
-  "changelog": "新增配件定位模式（外接GPS配件，需憑證；無憑證的盒子不顯示、行為不變）"
+  "version": "1.5.34",
+  "sha256": "6c02443f7071c08ebb4ce9a5e7effecc05c713c8670deabfc4e2594642a3fc87",
+  "sig": "MNT5qk99J6U60of99UsIipACcGgS843rxSndxXrTcJd/0VCDG4PznriweZnR/aHmTMA5g1OxgOthOAT4hzrwDQ==",
+  "changelog": "OTA 發布改為加密，不再公開明文原始碼",
+  "url": "https://gpsikmin2026.github.io/update/pikmin_web.enc",
+  "enc": true
 }
