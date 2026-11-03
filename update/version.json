@@ -1,8 +1,8 @@
 {
-  "version": "1.5.38",
-  "sha256": "d96d87f399003c98084312ebfeca6dece2602c46b27079ed8208baa700b19031",
-  "sig": "vd3orq6FFtXTueioY+11J1uV21YCUSXUDPnTIN0G0kjz6SHXTfklvWIpAqpnlFl2kXDO+2jYsHI6GZ4kU2aaAA==",
-  "changelog": "瞬移/繞圈座標欄位可輸入括號、全形逗號或空白",
+  "version": "1.5.39",
+  "sha256": "55a0ba0f163ee4473c20e781a8a97f522e351c574807f0dfdbc8a3bb33c31d4d",
+  "sig": "xsXFbglJDXy/r4y7W7v/L2/Uh5iifaXyyMsaLR9dMFoRQpEwzxrOtHisb3738rOLDh/zi7Ueaa7giULaNb9EDg==",
+  "changelog": "新增「🛠️ 重置連線」按鈕（解決已在執行中/卡住，免重開機）與說明；按開始遇已在執行中會詢問是否重置",
   "url": "https://gpsikmin2026.github.io/update/pikmin_web.enc",
   "enc": true
 }
