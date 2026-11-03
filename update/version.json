@@ -1,8 +1,8 @@
 {
-  "version": "1.5.39",
-  "sha256": "55a0ba0f163ee4473c20e781a8a97f522e351c574807f0dfdbc8a3bb33c31d4d",
-  "sig": "xsXFbglJDXy/r4y7W7v/L2/Uh5iifaXyyMsaLR9dMFoRQpEwzxrOtHisb3738rOLDh/zi7Ueaa7giULaNb9EDg==",
-  "changelog": "新增「🛠️ 重置連線」按鈕（解決已在執行中/卡住，免重開機）與說明；按開始遇已在執行中會詢問是否重置",
+  "version": "1.5.40",
+  "sha256": "abec825a5d58040a7c50d2ec1d858aae8ca04d0d1c0bf090b4ad53975e99ffbc",
+  "sig": "1ky4EZ3VfBOdX4FpoLe9QsjEaA1shLf/9cL5uSF2VqQr0aZVALyVB5R7onizAybSkwYTvcLs+7DV6DQwsM9NAA==",
+  "changelog": "重置連線按鈕加入進度橫幅與成功/失敗提示（按了不再沒反應）",
   "url": "https://gpsikmin2026.github.io/update/pikmin_web.enc",
   "enc": true
 }
