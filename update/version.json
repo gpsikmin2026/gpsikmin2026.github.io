@@ -1,8 +1,8 @@
 {
-  "version": "1.5.34",
-  "sha256": "6c02443f7071c08ebb4ce9a5e7effecc05c713c8670deabfc4e2594642a3fc87",
-  "sig": "MNT5qk99J6U60of99UsIipACcGgS843rxSndxXrTcJd/0VCDG4PznriweZnR/aHmTMA5g1OxgOthOAT4hzrwDQ==",
-  "changelog": "OTA 發布改為加密，不再公開明文原始碼",
+  "version": "1.5.38",
+  "sha256": "d96d87f399003c98084312ebfeca6dece2602c46b27079ed8208baa700b19031",
+  "sig": "vd3orq6FFtXTueioY+11J1uV21YCUSXUDPnTIN0G0kjz6SHXTfklvWIpAqpnlFl2kXDO+2jYsHI6GZ4kU2aaAA==",
+  "changelog": "瞬移/繞圈座標欄位可輸入括號、全形逗號或空白",
   "url": "https://gpsikmin2026.github.io/update/pikmin_web.enc",
   "enc": true
 }
