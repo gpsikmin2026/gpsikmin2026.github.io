@@ -1,8 +1,8 @@
 {
-  "version": "1.5.47",
-  "sha256": "57af0fb8bb65524cfe4c15ff771e33e6584f3953e943dde72e704c24393bc58b",
-  "sig": "KOIF5VZq7L185a0wF8dqVVtjYrx+pQtdjg31XgARR+SbcAIQwwToh9WrIISZ6b5nMr52i/0MYzvvxkXv2GNlCA==",
-  "changelog": "新增USB連線健康燈（標題列色點：綠/黃/灰/紅，點擊看說明）；連線失敗、重置失敗、USB異常時引導傳送診斷（按了才送）；修正從其他分頁無法開啟診斷區",
+  "version": "1.6.0",
+  "sha256": "fc321ba62bedb592842015390d51ec91b1170704c229fe01ca2cd263fbba59ea",
+  "sig": "V2XP55lc0EP0I5DYiRZMD/09Gog2RieUTmJwWM07c11wavtXe/+JfwVIWchXwvLZGwq0V4H/9C+5B6CZjwE/AA==",
+  "changelog": "UI優化：更多分頁重排（重置/診斷在前、搖桿預設收合）、地圖提示隨分頁、上一點/清除加文字、小字放大與對比提升",
   "url": "https://gpsikmin2026.github.io/update/pikmin_web.enc",
   "enc": true
 }
