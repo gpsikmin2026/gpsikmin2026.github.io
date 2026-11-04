@@ -1,8 +1,8 @@
 {
-  "version": "1.5.46",
-  "sha256": "af899f4c1ae748d525fe940a8c624fdfb9996e652f7cbcdc236587c47c7466e3",
-  "sig": "+SZFOSN2GWP+tpcc5dARDXtkdAvCP3offZp+tl90NA0QqwjWlYnS0mKBwA1YcGzNOz8UHmjqiTnliWAZpVf6Aw==",
-  "changelog": "外接搖桿啟動也加鎖防併發；疊圖上傳只保留最新一張；搖桿指示燈不再受盒子時鐘影響；同名路線同分鐘存檔不再覆蓋",
+  "version": "1.5.47",
+  "sha256": "57af0fb8bb65524cfe4c15ff771e33e6584f3953e943dde72e704c24393bc58b",
+  "sig": "KOIF5VZq7L185a0wF8dqVVtjYrx+pQtdjg31XgARR+SbcAIQwwToh9WrIISZ6b5nMr52i/0MYzvvxkXv2GNlCA==",
+  "changelog": "新增USB連線健康燈（標題列色點：綠/黃/灰/紅，點擊看說明）；連線失敗、重置失敗、USB異常時引導傳送診斷（按了才送）；修正從其他分頁無法開啟診斷區",
   "url": "https://gpsikmin2026.github.io/update/pikmin_web.enc",
   "enc": true
 }
