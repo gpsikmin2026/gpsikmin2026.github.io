@@ -1,8 +1,8 @@
 {
-  "version": "1.5.44",
-  "sha256": "5dc25f6c6919b536dca4ee001cd871a95346d44e25864a2e947730559c18a1e7",
-  "sig": "18gqFY5ReL4hOjfT8rDoQAeaS3ezPDLVnVU11ih1ATSZGmjqFJW2K7FYWdnAI6cdQO5+TA04LMGcbv7EjfCuBQ==",
-  "changelog": "重置連線的狀態視窗改顯示在地圖中央（不再貼畫面最上方）",
+  "version": "1.5.45",
+  "sha256": "48c52de16b9572b6d5c8d9e984cd7a890795eda328580c834eac6613ed03aaca",
+  "sig": "M2XQGsAfsyzj/woNnONbTJr4LiiBbtZrcf65l7pwKdDEJwdtDIlbwQJpFjzNyClcBGo/Z/GiG24jnw3qNt7CDw==",
+  "changelog": "修正連點開始鈕或自動重連造成同時啟動多個模擬、重複重啟USB服務；啟動等待中按停止不會再偷偷開跑；開始鈕送出後顯示啟動中",
   "url": "https://gpsikmin2026.github.io/update/pikmin_web.enc",
   "enc": true
 }
