@@ -1,8 +1,8 @@
 {
-  "version": "1.7.2",
-  "sha256": "69a85bc1bb5b4f9f912a6d4ebc032fde45ac6d06073413581ffe83cfab73e4a5",
-  "sig": "Y3E31JzH+JCZh6YL94jpb3xErHiVzcWaiBrNJcvYp8PncCwl2pQqQH1Lm1Wa2+De3QjJrQUGVYJczxcCNifQDQ==",
-  "changelog": "狀態列移到主按鈕下方；目前位置標記改成醒目的圓章加脈動外圈；修正搖桿在沒有標記時出錯的問題",
+  "version": "1.8.0",
+  "sha256": "ecee5073500a28846923d3aeb8e2bc764ca59b6cd8fd5b39040cdab3d5d6dc2d",
+  "sig": "sMKvZ5+M8cVZP5LzyclHjRnqGi3bzDEjOmcmFTcMyz/4I47j4I5fmBhp6k6n5RqW6ZCJyMIebSyAFCbBXvflDg==",
+  "changelog": "新增虛擬搖桿（地圖方向鍵）：手機連線後地圖右下角出現四個方向鍵，按了移動目前GPS位置；更多分頁的搖桿區改為實體搖桿／虛擬搖桿兩個開關，粗調預設50m；改善手機畫面縮放後版面被遮住的問題",
   "url": "https://gpsikmin2026.github.io/update/pikmin_web.enc",
   "enc": true
 }
