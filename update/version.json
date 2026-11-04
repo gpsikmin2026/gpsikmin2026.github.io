@@ -1,8 +1,8 @@
 {
-  "version": "1.5.40",
-  "sha256": "abec825a5d58040a7c50d2ec1d858aae8ca04d0d1c0bf090b4ad53975e99ffbc",
-  "sig": "1ky4EZ3VfBOdX4FpoLe9QsjEaA1shLf/9cL5uSF2VqQr0aZVALyVB5R7onizAybSkwYTvcLs+7DV6DQwsM9NAA==",
-  "changelog": "重置連線按鈕加入進度橫幅與成功/失敗提示（按了不再沒反應）",
+  "version": "1.5.41",
+  "sha256": "7e64c9b953dfb947925e94ec7100ce328a5f1e52837c2391d69c82ed9c0bd2cf",
+  "sig": "qW4RKx+Z0xWKKhp/J9nA8D8oaB4S7/mrDPNudUe+U6H3jC2z5RFtrArUGzF/uwauoZwSe45vzf0rq5fITM2TBw==",
+  "changelog": "修正重置連線與自動重連卡90秒：改強制重啟USB服務、重置期間防重複觸發",
   "url": "https://gpsikmin2026.github.io/update/pikmin_web.enc",
   "enc": true
 }
