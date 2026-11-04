@@ -1,8 +1,8 @@
 {
-  "version": "1.6.0",
-  "sha256": "fc321ba62bedb592842015390d51ec91b1170704c229fe01ca2cd263fbba59ea",
-  "sig": "V2XP55lc0EP0I5DYiRZMD/09Gog2RieUTmJwWM07c11wavtXe/+JfwVIWchXwvLZGwq0V4H/9C+5B6CZjwE/AA==",
-  "changelog": "UI優化：更多分頁重排（重置/診斷在前、搖桿預設收合）、地圖提示隨分頁、上一點/清除加文字、小字放大與對比提升",
+  "version": "1.7.0",
+  "sha256": "b9582add6d8affed0f6bf58a2c9823c005bb91772c76b7662d1a047ee8873d58",
+  "sig": "bYvGRUj3EJsFBDiJpF0vzLytShZizsvpAKOnfgKerXXg1YkLiBSypvQ+2EYJpciuikyCEFMJ4Pj2H+364E/HDg==",
+  "changelog": "介面改版：連線手機與開始合併為單一主按鈕、新增連線/USB狀態列、上一點與清除移到地圖上、掛機模式移到更多分頁、開始鈕顯示距離與時間摘要",
   "url": "https://gpsikmin2026.github.io/update/pikmin_web.enc",
   "enc": true
 }
