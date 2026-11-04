@@ -1,8 +1,8 @@
 {
-  "version": "1.7.1",
-  "sha256": "2fab02d9850789263b73de0d9c373e42e4c446bc46b975879f373cb43b8ba29d",
-  "sig": "oxttU4Sl8qWTS3t3/cBzFxNbiOxlmJpeKW4w+JbBwxizpScafvoYcwl4LOLoVjdNOYvHw/XLQ3uiai7/v5HsBA==",
-  "changelog": "標題欄在手機上固定於畫面最上方（符合設計稿）；縮放鈕、提示、上一點/清除依標題欄高度下移；收起鈕只收下方面板",
+  "version": "1.7.2",
+  "sha256": "69a85bc1bb5b4f9f912a6d4ebc032fde45ac6d06073413581ffe83cfab73e4a5",
+  "sig": "Y3E31JzH+JCZh6YL94jpb3xErHiVzcWaiBrNJcvYp8PncCwl2pQqQH1Lm1Wa2+De3QjJrQUGVYJczxcCNifQDQ==",
+  "changelog": "狀態列移到主按鈕下方；目前位置標記改成醒目的圓章加脈動外圈；修正搖桿在沒有標記時出錯的問題",
   "url": "https://gpsikmin2026.github.io/update/pikmin_web.enc",
   "enc": true
 }
