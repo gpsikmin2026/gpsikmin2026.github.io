@@ -1,8 +1,8 @@
 {
-  "version": "1.5.43",
-  "sha256": "9d7351e9defe2b0c42d05eef93adb8c5221114c50f6beedf33a35374f77382b5",
-  "sig": "VBvK5tbpBxYRBHsz7+jDTbAE8KcXFtjsUvhYRIADZA1gT6U5e+NCUpwr1WkHVpceYf6um+z6vTn/zc5zatgZDA==",
-  "changelog": "更新完成後等盒子重啟好才自動重新整理（不再落在無法開啟網頁錯誤頁）；逾時/未重啟會顯示提示；診斷欄位移到重置連線下方並加捷徑",
+  "version": "1.5.44",
+  "sha256": "5dc25f6c6919b536dca4ee001cd871a95346d44e25864a2e947730559c18a1e7",
+  "sig": "18gqFY5ReL4hOjfT8rDoQAeaS3ezPDLVnVU11ih1ATSZGmjqFJW2K7FYWdnAI6cdQO5+TA04LMGcbv7EjfCuBQ==",
+  "changelog": "重置連線的狀態視窗改顯示在地圖中央（不再貼畫面最上方）",
   "url": "https://gpsikmin2026.github.io/update/pikmin_web.enc",
   "enc": true
 }
