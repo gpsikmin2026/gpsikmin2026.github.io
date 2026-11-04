@@ -1,8 +1,8 @@
 {
-  "version": "1.5.45",
-  "sha256": "48c52de16b9572b6d5c8d9e984cd7a890795eda328580c834eac6613ed03aaca",
-  "sig": "M2XQGsAfsyzj/woNnONbTJr4LiiBbtZrcf65l7pwKdDEJwdtDIlbwQJpFjzNyClcBGo/Z/GiG24jnw3qNt7CDw==",
-  "changelog": "修正連點開始鈕或自動重連造成同時啟動多個模擬、重複重啟USB服務；啟動等待中按停止不會再偷偷開跑；開始鈕送出後顯示啟動中",
+  "version": "1.5.46",
+  "sha256": "af899f4c1ae748d525fe940a8c624fdfb9996e652f7cbcdc236587c47c7466e3",
+  "sig": "+SZFOSN2GWP+tpcc5dARDXtkdAvCP3offZp+tl90NA0QqwjWlYnS0mKBwA1YcGzNOz8UHmjqiTnliWAZpVf6Aw==",
+  "changelog": "外接搖桿啟動也加鎖防併發；疊圖上傳只保留最新一張；搖桿指示燈不再受盒子時鐘影響；同名路線同分鐘存檔不再覆蓋",
   "url": "https://gpsikmin2026.github.io/update/pikmin_web.enc",
   "enc": true
 }
