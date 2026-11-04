@@ -1,8 +1,8 @@
 {
-  "version": "1.5.41",
-  "sha256": "7e64c9b953dfb947925e94ec7100ce328a5f1e52837c2391d69c82ed9c0bd2cf",
-  "sig": "qW4RKx+Z0xWKKhp/J9nA8D8oaB4S7/mrDPNudUe+U6H3jC2z5RFtrArUGzF/uwauoZwSe45vzf0rq5fITM2TBw==",
-  "changelog": "修正重置連線與自動重連卡90秒：改強制重啟USB服務、重置期間防重複觸發",
+  "version": "1.5.42",
+  "sha256": "3e772a9baeb3ff9d26b66ba9917f25922f7aaba65f3c575f621a9ff1a92f127c",
+  "sig": "E9CyEQGfiBIXV3jmHHI5UHbSoyvihemPNelAb04edMa00m/aPXkBCUUjT+KcBolA98vRX3foy8900JXkqjqRAg==",
+  "changelog": "診斷欄位移到重置連線下方、展開更多區塊自動捲到可見處、重置連線下新增傳送診斷捷徑；含1.5.41的USB重啟不卡90秒修正",
   "url": "https://gpsikmin2026.github.io/update/pikmin_web.enc",
   "enc": true
 }
