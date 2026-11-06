@@ -1,8 +1,8 @@
 {
-  "version": "1.8.1",
-  "sha256": "c465ce152b79195fd9359f8e22dbb49345ef2e62098a28a90979f8c3c116fc1d",
-  "sig": "tKyTC2kLluQzHV+bAxue1IBVyOp+NWWqMveY/VYJS9YzKsLkbYxXPmV/BuaJAJeOf1t9jkAOvDG6nhRRmD1vAw==",
-  "changelog": "1.8.1：修正用搖桿後畫面卡在搖桿狀態、無法載入路線（事件廣播、每2秒與盒子對帳、停止後確認、停止後外接搖桿不再自行重啟）；上一點/清除按鈕不再遮到進度列",
+  "version": "1.8.2",
+  "sha256": "7074251d8b0d2d36cdb3d0b63f6ab09fa5b2bf6e423c0408a63f42f835c7774c",
+  "sig": "LdZys1/Kt4MMB7RzzE4XfYkKFMLKPak6LXLMQLMx9sxXSKPfaKP3fxxCG6JfXrHy1uFP5k7VvikwgfqjIWmUDQ==",
+  "changelog": "修正：瞬移與繞圈模式也顯示「上一點／清除」鍵（用來取消已確認的目標點）",
   "url": "https://gpsikmin2026.github.io/update/pikmin_web.enc",
   "enc": true
 }
