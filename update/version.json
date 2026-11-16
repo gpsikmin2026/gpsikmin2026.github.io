@@ -1,8 +1,8 @@
 {
-  "version": "1.8.3",
-  "sha256": "cd4dbd71029a7215ff023756787cafe8b8a43189363d108ec9cc0377d43cfd5d",
-  "sig": "VmzJywrb/BALEoEyqFgwZS8IFdXvQJOwlVX+DtQj6QsQdr482fW8R4iarBGOI6rPpgIqYB1sKLKKPEuWqXhECQ==",
-  "changelog": "穩定性修正：連線失敗不再卡執行中、停止計時器不干擾新任務、瞬移/繞圈GPS失效自動重連與停止、速度/半徑輸入檢查",
+  "version": "1.8.4",
+  "sha256": "b92b02840bb3b20a56aa01a1ec226276b4c81f6a4d83ceebf79c9fbe9a3a8a6b",
+  "sig": "yeMc0ZV9sDJ+5NXXooENWfmsaogxy2wUyXLOuwF/0HXx7lIG1lO0LHhDiG+/nGfbEMqPIqNNe75h71Hb0nRtDw==",
+  "changelog": "修正瞬移/繞圈模式下清除按鈕無效，現在任何模式都能清除目標點與中繼點",
   "url": "https://gpsikmin2026.github.io/update/pikmin_web.enc",
   "enc": true
 }
