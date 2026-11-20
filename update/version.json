@@ -1,8 +1,8 @@
 {
-  "version": "1.8.4",
-  "sha256": "b92b02840bb3b20a56aa01a1ec226276b4c81f6a4d83ceebf79c9fbe9a3a8a6b",
-  "sig": "yeMc0ZV9sDJ+5NXXooENWfmsaogxy2wUyXLOuwF/0HXx7lIG1lO0LHhDiG+/nGfbEMqPIqNNe75h71Hb0nRtDw==",
-  "changelog": "修正瞬移/繞圈模式下清除按鈕無效，現在任何模式都能清除目標點與中繼點",
+  "version": "1.9.0",
+  "sha256": "fa784ee2be7bc169096c351aeb2ba0403b86208895394b5822eed19303a35e70",
+  "sig": "Ff0GW5fBmH82RWy6/sgePC5nvN5Q+y3uoACixtnpCaLz8rn8DjsyO05ufWar9JCsRkH/J17yZQCcwrGdU4gtBA==",
+  "changelog": "1.9.0：新增「切換至 GPSokemon」按鈕（僅在裝置同時安裝 GPSokemon 時顯示，執行中不可切換）",
   "url": "https://gpsikmin2026.github.io/update/pikmin_web.enc",
   "enc": true
 }
